@@ -1,0 +1,51 @@
+TripReceipt
+Copyright 2026 TripReceipt 팀 (오픈소스기초설계)
+
+This product includes software developed by third parties as listed below.
+이 제품은 아래의 제3자 오픈소스를 포함하거나 사용합니다.
+
+------------------------------------------------------------------------------
+PaddleOCR / PP-OCR 모델 (@paddleocr/paddleocr-js, PP-OCRv5 det/rec ONNX)
+Copyright (c) PaddlePaddle Authors
+Licensed under the Apache License, Version 2.0
+https://github.com/PaddlePaddle/PaddleOCR
+
+사용 모델:
+  - PP-OCRv5_mobile_det
+    https://huggingface.co/PaddlePaddle/PP-OCRv5_mobile_det_onnx
+  - korean_PP-OCRv5_mobile_rec
+    https://huggingface.co/PaddlePaddle/korean_PP-OCRv5_mobile_rec_onnx
+
+------------------------------------------------------------------------------
+ONNX Runtime Web
+Copyright (c) Microsoft Corporation
+Licensed under the MIT License
+https://github.com/microsoft/onnxruntime
+
+------------------------------------------------------------------------------
+OpenCV / OpenCV.js (@techstark/opencv-js)
+Copyright (c) OpenCV team
+Licensed under the Apache License, Version 2.0
+https://github.com/opencv/opencv
+
+------------------------------------------------------------------------------
+idb
+Copyright (c) Jake Archibald
+Licensed under the ISC License
+https://github.com/jakearchibald/idb
+
+------------------------------------------------------------------------------
+Vite
+Copyright (c) VoidZero Inc. and Vite contributors
+Licensed under the MIT License
+https://github.com/vitejs/vite
+
+------------------------------------------------------------------------------
+TypeScript
+Copyright (c) Microsoft Corporation
+Licensed under the Apache License, Version 2.0
+https://github.com/microsoft/TypeScript
+
+------------------------------------------------------------------------------
+전체 의존성 목록과 각 라이선스는 package-lock.json 및
+`npm ls --all` 로 확인할 수 있습니다. (P8 에서 최종 점검)

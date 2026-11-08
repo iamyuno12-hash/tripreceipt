@@ -1,0 +1,23 @@
+# 의존성
+node_modules/
+
+# 빌드 산출물
+dist/
+*.tsbuildinfo
+
+# OCR 모델 (용량이 커서 저장소에 올리지 않음 - scripts/fetch-models.sh 로 내려받음)
+public/models/
+
+# 환경별 설정
+.env
+.env.local
+local.properties
+
+# IDE / OS
+.idea/
+.vscode/
+.DS_Store
+
+# 로그
+npm-debug.log*
+*.log

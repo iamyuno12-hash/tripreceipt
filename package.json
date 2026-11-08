@@ -1,0 +1,24 @@
+{
+  "name": "tripreceipt",
+  "version": "0.1.0",
+  "private": true,
+  "description": "여행 영수증 OCR 지출 관리 - 브라우저에서 동작하는 오프라인 웹 앱",
+  "license": "Apache-2.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc --noEmit && vite build",
+    "preview": "vite preview",
+    "typecheck": "tsc --noEmit",
+    "test": "node --test \"test/**/*.test.ts\""
+  },
+  "dependencies": {
+    "@paddleocr/paddleocr-js": "0.4.2",
+    "idb": "8.0.4"
+  },
+  "devDependencies": {
+    "@types/node": "22.18.12",
+    "typescript": "7.0.2",
+    "vite": "8.3.5"
+  }
+}
