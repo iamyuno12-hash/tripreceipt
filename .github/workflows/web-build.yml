@@ -1,0 +1,43 @@
+# 팀원 로컬과 동일한 도커 이미지로 CI 를 돌려 "내 PC 에서는 되는데" 상황을 막는다.
+# P7 에서 OCR 정확도 측정 리포트 업로드까지 확장한다.
+name: Web Build
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main, develop]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: 소스 체크아웃
+        uses: actions/checkout@v4
+
+      - name: 빌드 이미지 생성
+        run: docker compose build dev
+
+      - name: 의존성 설치
+        run: docker compose run --rm dev npm ci
+
+      - name: 타입 검사
+        run: docker compose run --rm dev npm run typecheck
+
+      - name: 단위 테스트
+        run: docker compose run --rm dev npm test
+
+      - name: 정적 파일 빌드
+        run: docker compose run --rm dev npm run build
+
+      # 모델은 용량이 커서 CI 에서는 받지 않는다.
+      # 대신 다운로드 스크립트의 문법만 확인한다.
+      - name: 모델 스크립트 문법 검사
+        run: docker compose run --rm dev sh -n scripts/fetch-models.sh
+
+      - name: 빌드 결과 업로드
+        uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: dist/
+          if-no-files-found: error
