@@ -1,7 +1,10 @@
 /** 여행 상세 = 그 여행의 영수증 목록. */
 import { el, pageHeader, emptyState, phaseNote } from '../dom.ts';
 import { money, dateTime, dateRange } from '../format.ts';
-import { findTrip, receiptsOf } from '../../data/dummy.ts';
+import { getTrip } from '../../storage/trips.ts';
+import { listReceipts } from '../../storage/receipts.ts';
+import { isSampleLoaded } from '../../storage/meta.ts';
+import { sampleBanner } from './home.ts';
 import { tripTotal, crossCheck, type Receipt } from '../../types.ts';
 
 const STATUS_LABEL: Record<Receipt['status'], string> = {
@@ -33,9 +36,9 @@ function receiptRow(r: Receipt): HTMLElement {
   );
 }
 
-export function renderTrip(params: Record<string, string>): HTMLElement {
+export async function renderTrip(params: Record<string, string>): Promise<HTMLElement> {
   const tripId = params['id'] ?? '';
-  const trip = findTrip(tripId);
+  const trip = await getTrip(tripId);
 
   if (!trip) {
     return el('div', {},
@@ -45,12 +48,16 @@ export function renderTrip(params: Record<string, string>): HTMLElement {
     );
   }
 
-  const receipts = receiptsOf(trip.id);
+  const [receipts, sample] = await Promise.all([listReceipts(trip.id), isSampleLoaded()]);
   const reviewCount = receipts.filter((r) => r.status === 'needs_review').length;
 
   return el('div', {},
+    sample ? sampleBanner() : null,
     el('a', { class: 'back-link', href: '#/' }, '← 여행 목록'),
     pageHeader(trip.name, `${trip.destination} · ${dateRange(trip.startDate, trip.endDate)}`),
+    el('div', { class: 'btn-row' },
+      el('a', { class: 'btn tiny', href: `#/trips/${trip.id}/edit` }, '여행 수정'),
+    ),
 
     el('div', { class: 'summary-box' },
       el('div', { class: 'summary-item' },
@@ -73,7 +80,10 @@ export function renderTrip(params: Record<string, string>): HTMLElement {
       ? emptyState('아직 영수증이 없습니다.', '스캔 화면에서 영수증을 추가하세요.')
       : el('div', { class: 'card-list' }, ...receipts.map(receiptRow)),
 
-    el('a', { class: 'btn primary block', href: '#/scan' }, '+ 영수증 추가'),
-    phaseNote('P6', '여행별 통계와 CSV 내보내기가 이 화면에 연결됩니다.'),
+    el('div', { class: 'btn-row' },
+      el('a', { class: 'btn primary', href: `#/trips/${trip.id}/receipts/new` }, '+ 영수증 직접 입력'),
+      el('a', { class: 'btn', href: '#/scan' }, '사진으로 추가'),
+    ),
+    phaseNote('P4', '사진으로 추가하면 OCR 이 품목과 금액을 자동으로 채웁니다. 지금은 직접 입력만 저장됩니다.'),
   );
 }

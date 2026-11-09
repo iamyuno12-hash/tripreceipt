@@ -1,11 +1,16 @@
 /**
- * P1 화면 확인용 더미 데이터.
+ * 샘플 데이터.
  *
- * P2 에서 IndexedDB 로 교체된다. 그때 이 파일은 "처음 실행 시 넣어주는 예시 데이터"
- * 로만 남기거나 삭제한다.
+ * 실제 OCR 결과가 아니라 손으로 지어낸 예시다. 화면 동작을 확인하거나 시연 전에
+ * 흐름을 보여줄 때만 쓴다. 자동으로 들어가지 않고, 설정이나 빈 화면에서 사용자가
+ * 직접 "샘플 데이터 넣기" 를 눌렀을 때만 저장된다.
  *
- * 일부러 교차검증에 걸리는 영수증(needs_review)을 하나 섞어 두었다.
- * 검수 화면을 더미 상태에서도 확인할 수 있어야 하기 때문이다.
+ * 샘플이 들어가 있는 동안에는 화면 상단에 배너가 떠서, 실제 인식 결과와 혼동할
+ * 일이 없게 했다.
+ *
+ * 일부러 교차검증에 걸리는 영수증을 하나 섞어 두었다(大阪市交通局).
+ * OCR 이 "小計" 줄을 품목으로 잘못 읽은 상황을 흉내 낸 것으로, 검수 화면이
+ * 어떻게 동작하는지 OCR 없이도 확인할 수 있게 하기 위함이다.
  */
 import type { Receipt, ReceiptItem, Trip, Category } from '../types.ts';
 
@@ -148,22 +153,3 @@ export const RECEIPTS: readonly Receipt[] = [
     items: [],
   },
 ];
-
-export function tripsWithReceipts(): { trip: Trip; receipts: Receipt[] }[] {
-  return TRIPS.map((trip) => ({
-    trip,
-    receipts: RECEIPTS.filter((r) => r.tripId === trip.id),
-  }));
-}
-
-export function findTrip(id: string): Trip | undefined {
-  return TRIPS.find((t) => t.id === id);
-}
-
-export function receiptsOf(tripId: string): Receipt[] {
-  return RECEIPTS.filter((r) => r.tripId === tripId);
-}
-
-export function findReceipt(id: string): Receipt | undefined {
-  return RECEIPTS.find((r) => r.id === id);
-}

@@ -7,7 +7,9 @@
  */
 import { el, pageHeader, emptyState, phaseNote } from '../dom.ts';
 import { money, dateTime, percent } from '../format.ts';
-import { findReceipt, findTrip } from '../../data/dummy.ts';
+import { getReceipt, confirmReceipt } from '../../storage/receipts.ts';
+import { getTrip } from '../../storage/trips.ts';
+import { navigate } from '../../router.ts';
 import { crossCheck, type Receipt } from '../../types.ts';
 
 function checkBanner(r: Receipt): HTMLElement {
@@ -35,8 +37,9 @@ function checkBanner(r: Receipt): HTMLElement {
   );
 }
 
-export function renderReceipt(params: Record<string, string>): HTMLElement {
-  const receipt = findReceipt(params['id'] ?? '');
+export async function renderReceipt(params: Record<string, string>): Promise<HTMLElement> {
+  const receiptId = params['id'] ?? '';
+  const receipt = await getReceipt(receiptId);
 
   if (!receipt) {
     return el('div', {},
@@ -46,7 +49,7 @@ export function renderReceipt(params: Record<string, string>): HTMLElement {
     );
   }
 
-  const trip = findTrip(receipt.tripId);
+  const trip = await getTrip(receipt.tripId);
   const c = crossCheck(receipt);
 
   const rows = receipt.items.map((item) =>
@@ -56,8 +59,7 @@ export function renderReceipt(params: Record<string, string>): HTMLElement {
       el('td', { class: 'num', text: money(item.amount, receipt.currency) }),
       el('td', {}, el('span', { class: 'chip', text: item.category })),
       el('td', { class: 'num' },
-        el('button', { class: 'btn tiny', type: 'button',
-          onclick: () => alert('품목 수정·삭제는 P5 에서 구현합니다.') }, '수정'),
+        el('a', { class: 'btn tiny', href: `#/receipts/${receipt.id}/edit` }, '수정'),
       ),
     ),
   );
@@ -114,12 +116,17 @@ export function renderReceipt(params: Record<string, string>): HTMLElement {
         ),
 
     el('div', { class: 'btn-row' },
-      el('button', { class: 'btn primary', type: 'button',
-        onclick: () => alert('확인 처리는 P5 에서 구현합니다.') }, '확인 완료로 표시'),
-      el('button', { class: 'btn', type: 'button',
-        onclick: () => alert('재인식은 P4 에서 구현합니다.') }, '다시 인식'),
+      receipt.status === 'confirmed'
+        ? null
+        : el('button', { class: 'btn primary', type: 'button',
+            onclick: (ev: Event) => {
+              const btn = ev.currentTarget as HTMLButtonElement;
+              btn.disabled = true;
+              void confirmReceipt(receipt.id).then(() => navigate(`/trips/${receipt.tripId}`));
+            } }, '확인 완료로 표시'),
+      el('a', { class: 'btn', href: `#/receipts/${receipt.id}/edit` }, '수정'),
     ),
 
-    phaseNote('P5', '품목 추가·수정·삭제와 확인 처리가 연결됩니다.'),
+    phaseNote('P4·P5', '사진에서 품목을 자동으로 채우고, 검수 결과를 바로 반영하는 흐름이 추가됩니다.'),
   );
 }

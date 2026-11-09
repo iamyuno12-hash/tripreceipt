@@ -7,16 +7,30 @@
  */
 import { el, pageHeader, emptyState, phaseNote } from '../dom.ts';
 import { money } from '../format.ts';
-import { TRIPS, receiptsOf } from '../../data/dummy.ts';
+import { listTrips } from '../../storage/trips.ts';
+import { listAllReceipts } from '../../storage/receipts.ts';
+import type { Receipt } from '../../types.ts';
 import { totalsByCategory, tripTotal, isCountable, CATEGORIES } from '../../types.ts';
 
-export function renderStats(): HTMLElement {
-  if (TRIPS.length === 0) {
-    return el('div', {}, pageHeader('통계'), emptyState('집계할 여행이 없습니다.'));
+export async function renderStats(): Promise<HTMLElement> {
+  const [trips, all] = await Promise.all([listTrips(), listAllReceipts()]);
+
+  if (trips.length === 0) {
+    return el('div', {},
+      pageHeader('통계'),
+      emptyState('집계할 여행이 없습니다.', '여행을 만들고 영수증을 추가하면 분류별 지출이 보입니다.'),
+    );
   }
 
-  const sections = TRIPS.map((trip) => {
-    const receipts = receiptsOf(trip.id);
+  const byTrip = new Map<string, Receipt[]>();
+  for (const r of all) {
+    const list = byTrip.get(r.tripId);
+    if (list) list.push(r);
+    else byTrip.set(r.tripId, [r]);
+  }
+
+  const sections = trips.map((trip) => {
+    const receipts = byTrip.get(trip.id) ?? [];
     const byCat = totalsByCategory(receipts);
     const total = tripTotal(receipts);
     const max = Math.max(1, ...byCat.values());

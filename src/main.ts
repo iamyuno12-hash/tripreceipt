@@ -7,10 +7,17 @@ import { renderScan } from './ui/screens/scan.ts';
 import { renderReceipt } from './ui/screens/receipt.ts';
 import { renderStats } from './ui/screens/stats.ts';
 import { renderSettings } from './ui/screens/settings.ts';
+import { renderTripForm } from './ui/screens/trip-form.ts';
+import { renderReceiptForm } from './ui/screens/receipt-form.ts';
 import { renderEnv } from './ui/screens/env.ts';
 
 const ROUTES: readonly Route[] = [
   { name: 'home', path: '/', render: renderHome },
+  // 구체적인 경로를 :id 보다 먼저 둬야 /trips/new 가 여행 상세로 잡히지 않는다.
+  { name: 'trip-new', path: '/trips/new', render: renderTripForm },
+  { name: 'trip-edit', path: '/trips/:id/edit', render: renderTripForm },
+  { name: 'receipt-new', path: '/trips/:tripId/receipts/new', render: renderReceiptForm },
+  { name: 'receipt-edit', path: '/receipts/:id/edit', render: renderReceiptForm },
   { name: 'trip', path: '/trips/:id', render: renderTrip },
   { name: 'scan', path: '/scan', render: renderScan },
   { name: 'receipt', path: '/receipts/:id', render: renderReceipt },
