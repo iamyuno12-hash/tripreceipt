@@ -109,6 +109,27 @@ docker compose run --rm dev sh scripts/fetch-models.sh
 docker compose up dev
 ```
 
+### 중요: 호스트에서 `npm` 을 직접 쓰지 않는다
+
+Node 는 컨테이너 안에만 있다. 로컬에 Node 를 설치할 필요가 없고, **설치했더라도 쓰지 않는다.**
+
+`make dev` 가 컨테이너 안에서 `npm install` 까지 알아서 실행하므로, 의존성이 새로 추가돼도
+따로 설치할 명령이 없다. 호스트에서 `npm install` 을 실행하면 아래 두 가지로 실패한다.
+
+- `EACCES: permission denied ... node_modules` — `node_modules` 는 도커 볼륨의 마운트 지점이라
+  root 소유다. 호스트의 npm 은 여기에 쓸 수 없다.
+- `EBADENGINE ... current: { node: 'v18...' }` — apt 로 설치되는 Node 는 보통 18 버전이라
+  Vite 8 의 요구 버전(20.19+ 또는 22.12+)에 못 미친다.
+
+모든 명령은 컨테이너 안에서 돈다.
+
+| 하려는 일 | 명령 |
+|---|---|
+| 개발 서버 | `make dev` |
+| 타입 검사 | `make typecheck` |
+| 테스트 | `make test` |
+| 빌드 | `make build` |
+
 ## 6. 확인
 
 브라우저에서 <http://localhost:5173> 을 연다.
@@ -144,6 +165,8 @@ git push origin --tags
 | Cross-origin isolation 이 경고로 뜸 | 개발 서버가 아닌 경로(파일 직접 열기 등)로 접속한 경우다. 반드시 `http://localhost:5173` 으로 접속 |
 | 모델 다운로드 실패 | 학교 네트워크가 huggingface.co 를 막는 경우가 있다. 다른 네트워크에서 `make models` 만 다시 실행 |
 | `make: command not found` (Windows) | 위 5단계의 `docker compose` 명령을 직접 사용 |
+| `EACCES: permission denied ... node_modules` | 호스트에서 `npm install` 을 실행한 경우다. 호스트에서는 npm 을 쓰지 않는다. `make dev` 만 실행하면 된다 |
+| `EBADENGINE` / `Unsupported engine` | 같은 원인. 호스트 Node 버전은 이 프로젝트와 무관하다 |
 
 ## 평소 작업 흐름
 
