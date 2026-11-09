@@ -404,3 +404,78 @@ code {
   font-size: 0.8rem;
   color: var(--text-dim);
 }
+
+/* ---------- P2: 폼 ---------- */
+
+.form { display: grid; gap: 14px; }
+
+.field { display: flex; flex-direction: column; gap: 4px; }
+.field-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+@media (max-width: 520px) { .field-row { grid-template-columns: 1fr; } }
+
+.field-label { font-size: 0.84rem; font-weight: 600; color: var(--text-dim); }
+.field-hint { font-size: 0.78rem; color: var(--text-dim); }
+
+.input {
+  padding: 9px 11px;
+  background: var(--surface);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  font: inherit;
+  font-size: 0.92rem;
+  width: 100%;
+}
+.input:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
+.input.tight { padding: 5px 8px; font-size: 0.85rem; }
+.input.qty { width: 64px; }
+.input.amt { width: 104px; }
+
+.form-error {
+  margin: 0;
+  padding: 9px 12px;
+  background: var(--warn-soft);
+  border-left: 3px solid var(--fail);
+  border-radius: 6px;
+  color: var(--fail);
+  font-size: 0.86rem;
+}
+
+/* 품목 합계와 총액 차이를 입력 중에 실시간으로 보여 준다 */
+.balance {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px;
+  padding: 10px 13px;
+  border-radius: 8px;
+  font-size: 0.86rem;
+  background: var(--surface-2);
+  border-left: 3px solid var(--border);
+}
+.balance.ok { background: var(--accent-soft); border-left-color: var(--ok); }
+.balance.warn { background: var(--warn-soft); border-left-color: var(--warn); }
+.balance-diff { font-weight: 700; margin-left: auto; }
+.balance.warn .balance-diff { color: var(--warn); }
+.balance.ok .balance-diff { color: var(--ok); }
+
+.danger-zone {
+  margin-top: 32px;
+  padding: 14px 16px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+.danger-zone .section-title { margin-top: 0; }
+
+.btn-row.center { justify-content: center; }
+
+/* ---------- P2: 샘플 데이터 배너 ---------- */
+
+.sample-banner {
+  padding: 9px 13px;
+  margin-bottom: 16px;
+  background: var(--warn-soft);
+  border-left: 3px solid var(--warn);
+  border-radius: 6px;
+  font-size: 0.84rem;
+}
+.sample-banner strong { color: var(--warn); }
