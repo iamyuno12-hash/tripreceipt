@@ -7,7 +7,7 @@ DC := docker compose
 
 help:
 	@echo "make image      - 개발용 도커 이미지 생성 (최초 1회)"
-	@echo "make models     - OCR 모델 다운로드 (최초 1회, 약 17MB)"
+	@echo "make models     - OCR 모델 다운로드 (없는 것만 받음, 처음엔 약 34MB)"
 	@echo "make dev        - 개발 서버 실행 -> http://localhost:5173"
 	@echo "make build      - 정적 파일 빌드 (dist/)"
 	@echo "make serve      - 빌드 결과를 nginx 로 서비스 -> http://localhost:8080"

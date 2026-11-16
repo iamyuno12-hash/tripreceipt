@@ -97,7 +97,7 @@ git clone https://github.com/<저장소주인계정>/tripreceipt.git
 cd tripreceipt
 
 make image      # 개발용 도커 이미지 생성 (최초 1회, 수 분 소요)
-make models     # OCR 모델 다운로드 (최초 1회, 약 17MB)
+make models     # OCR 모델 다운로드 (없는 것만 받음, 처음엔 약 34MB)
 make dev        # 개발 서버 실행
 ```
 
@@ -139,7 +139,6 @@ Node 는 컨테이너 안에만 있다. 로컬에 Node 를 설치할 필요가 �
 - WASM SIMD
 - Cross-origin isolation
 - IndexedDB
-- 카메라 API
 - 이미지 처리 API
 
 "영구 저장 권한" 은 경고(노란색)로 떠도 정상이다. P2 에서 처리한다.

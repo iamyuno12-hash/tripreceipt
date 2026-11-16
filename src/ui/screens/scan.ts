@@ -1,69 +1,186 @@
 /**
- * 영수증 스캔 화면.
+ * 영수증 등록 화면.
  *
- * P1 에서는 입력 경로(촬영 / 파일 선택)와 처리 단계 안내만 보여준다.
- * 실제 촬영·전처리는 P3, OCR 은 P4 에서 붙는다.
+ * 흐름: 여행 선택 → 사진 파일 선택 → 전처리 + OCR (ocr/pipeline.ts) → 결과 확인 → 저장 → 내용 입력
+ *
+ * 입력은 파일 선택만 둔다. 웹으로 서비스하므로 카메라 화면을 따로 만들지 않았다.
+ * 휴대폰 브라우저에서는 파일 선택 창에서 "사진 찍기" 를 고를 수 있어 촬영도 이 경로로 된다.
+ *
+ * OCR 결과(글자와 좌표)는 영수증에 함께 저장한다. 품목·금액을 자동으로 채우는 파서는 P5.
  */
-import { el, pageHeader, phaseNote } from '../dom.ts';
+import { el, pageHeader, emptyState, phaseNote } from '../dom.ts';
+import { navigate } from '../../router.ts';
+import { listTrips } from '../../storage/trips.ts';
+import { saveImage } from '../../storage/images.ts';
+import { createReceipt } from '../../storage/receipts.ts';
+import { ensurePersistOnce } from '../../storage/persist.ts';
+import { canvasToBlob } from '../../image/preprocess.ts';
+import { analyzeReceipt, type AnalyzeResult } from '../../ocr/pipeline.ts';
+import { meanScore } from '../../image/geometry.ts';
 import { totalModelMB } from '../../ocr/models.ts';
+import { OCR_LANGUAGE_LABELS, tripOcrLanguage, type Trip } from '../../types.ts';
 
-const STEPS: readonly (readonly [string, string, string])[] = [
-  ['1', '이미지 입력', '카메라로 찍거나 갤러리에서 고릅니다'],
-  ['2', '전처리', 'OpenCV.js 로 기울기 보정과 대비 개선'],
-  ['3', '문자 인식', 'PP-OCRv5 모델로 글자 위치와 내용을 읽습니다'],
-  ['4', '지출 정보 추출', '좌표로 줄을 묶어 품목과 금액을 분리합니다'],
-  ['5', '교차검증', '품목 합계와 총액을 맞춰 보고 다르면 검수로 넘깁니다'],
-];
+function note(text: string, kind: 'info' | 'ok' | 'fail' = 'info'): HTMLElement {
+  return el('p', { class: `ocr-status ${kind}`, text });
+}
 
-export function renderScan(): HTMLElement {
-  const preview = el('div', { class: 'preview-box' },
-    el('span', { class: 'preview-hint', text: '선택한 이미지가 여기에 표시됩니다' }),
-  );
+const HINT = '영수증 사진 파일을 선택하세요';
 
-  // P1 에서도 파일 선택은 실제로 동작시켜 미리보기까지 확인할 수 있게 한다.
+export async function renderScan(): Promise<HTMLElement> {
+  const trips = await listTrips();
+
+  if (trips.length === 0) {
+    return el('div', {},
+      pageHeader('영수증 등록'),
+      emptyState('먼저 여행을 만들어야 합니다.', '영수증은 여행에 속해 저장됩니다.'),
+      el('a', { class: 'btn primary block', href: '#/trips/new' }, '여행 만들기'),
+    );
+  }
+
+  const tripSelect = el('select', { class: 'input', id: 'scan-trip' });
+  for (const t of trips) {
+    tripSelect.appendChild(el('option', { value: t.id, text: `${t.name} (${t.destination})` }));
+  }
+  const currentTrip = (): Trip | undefined => trips.find((t) => t.id === tripSelect.value);
+  const langHint = el('p', { class: 'field-hint' });
+  const showLang = (): void => {
+    const lang = tripOcrLanguage(currentTrip());
+    langHint.textContent = `인식 언어: ${OCR_LANGUAGE_LABELS[lang]} — 여행 설정에서 바꿀 수 있습니다. ` +
+      `첫 인식 때 모델 약 ${totalModelMB(lang).toFixed(0)}MB 를 내려받습니다.`;
+  };
+  tripSelect.addEventListener('change', showLang);
+  showLang();
+
+  const stage = el('div', { class: 'preview-box' }, el('span', { class: 'preview-hint', text: HINT }));
+  const statusSlot = el('div', {});
+  const linesSlot = el('div', {});
+  const actionSlot = el('div', { class: 'btn-row' });
+  let analyzed: AnalyzeResult | null = null;
+  let busy = false;
+
+  function reset(): void {
+    analyzed = null;
+    stage.replaceChildren(el('span', { class: 'preview-hint', text: HINT }));
+    statusSlot.replaceChildren();
+    linesSlot.replaceChildren();
+    drawActions('idle');
+  }
+
+  async function run(file: File): Promise<void> {
+    if (busy) return;
+    busy = true;
+    drawActions('busy');
+    linesSlot.replaceChildren();
+    const lang = tripOcrLanguage(currentTrip());
+    try {
+      const bitmap = await createImageBitmap(file);
+      try {
+        analyzed = await analyzeReceipt(bitmap, {
+          lang,
+          onProgress: (m) => statusSlot.replaceChildren(note(m)),
+        });
+      } finally {
+        bitmap.close();
+      }
+      const { canvas, result, snapshot } = analyzed;
+      canvas.className = 'preview-img';
+      stage.replaceChildren(
+        canvas,
+        el('p', { class: 'preview-meta', text: `${snapshot.steps.join(' → ')} · ${canvas.width}×${canvas.height}` }),
+      );
+      const n = result.lines.length;
+      statusSlot.replaceChildren(n === 0
+        ? note('글자를 찾지 못했습니다. 영수증이 화면에 크게 나오게 다시 찍어 보세요. 그래도 저장해서 직접 입력할 수 있습니다.', 'fail')
+        : meanScore(result.lines) < 0.8
+          ? note(`${n}개 글자 상자를 읽었지만 흐릿한 부분이 많습니다 (${(snapshot.ms.total / 1000).toFixed(1)}초). 저장 후 내용을 꼭 확인하세요.`, 'fail')
+          : note(`${n}개 글자 상자를 읽었습니다 (${(snapshot.ms.total / 1000).toFixed(1)}초, 인식 ${snapshot.passes}회).`, 'ok'));
+      linesSlot.replaceChildren(
+        el('details', { class: 'ocr-raw' },
+          el('summary', { text: `읽은 글자 보기 (${n}개)` }),
+          el('pre', { class: 'ocr-raw-text',
+            text: [...result.lines].sort((a, b) => a.centerY - b.centerY).map((l) => l.text).join('\n') }),
+        ),
+      );
+      drawActions('ready');
+    } catch (err) {
+      console.error(err);
+      statusSlot.replaceChildren(note(`인식 실패: ${err instanceof Error ? err.message : String(err)}`, 'fail'));
+      drawActions('idle');
+    } finally {
+      busy = false;
+    }
+  }
+
+  async function save(): Promise<void> {
+    if (!analyzed) return;
+    drawActions('busy');
+    statusSlot.replaceChildren(note('저장 중…'));
+    try {
+      // OCR 좌표가 이 이미지 기준이므로, 원본이 아니라 인식에 쓴 이미지를 저장한다.
+      const blob = await canvasToBlob(analyzed.canvas);
+      const imageId = await saveImage(blob);
+      const trip = currentTrip();
+      const receipt = await createReceipt({
+        tripId: tripSelect.value,
+        imageId,
+        merchant: '',
+        purchasedAt: new Date().toISOString(),
+        currency: trip?.currency ?? 'KRW',
+        total: 0,
+        tax: null,
+        confidence: analyzed.result.lines.length ? meanScore(analyzed.result.lines) : null,
+        // 품목·금액은 P5 파서가 채운다. 그 전까지는 대기 상태로 두고 직접 입력한다.
+        status: 'pending',
+        items: [],
+        ocr: analyzed.snapshot,
+      });
+      void ensurePersistOnce();
+      navigate(`/receipts/${receipt.id}/edit`);
+    } catch (err) {
+      console.error(err);
+      statusSlot.replaceChildren(note(`저장 실패: ${err instanceof Error ? err.message : String(err)}`, 'fail'));
+      drawActions('ready');
+    }
+  }
+
+  function drawActions(mode: 'idle' | 'busy' | 'ready'): void {
+    if (mode === 'busy') {
+      actionSlot.replaceChildren(el('button', { class: 'btn', type: 'button', disabled: true }, '처리 중…'));
+      return;
+    }
+    if (mode === 'ready') {
+      actionSlot.replaceChildren(
+        el('button', { class: 'btn primary', type: 'button', onclick: () => { void save(); } }, '저장하고 내용 입력'),
+        el('button', { class: 'btn', type: 'button', onclick: reset }, '다른 사진'),
+      );
+      return;
+    }
+    actionSlot.replaceChildren(el('label', { class: 'btn primary', for: 'scan-file' }, '사진 선택'));
+  }
+  drawActions('idle');
+
   const fileInput = el('input', {
-    type: 'file',
-    accept: 'image/*',
-    class: 'visually-hidden',
-    id: 'receipt-file',
+    type: 'file', accept: 'image/*', class: 'visually-hidden', id: 'scan-file',
     onchange: (ev: Event) => {
       const input = ev.target as HTMLInputElement;
       const file = input.files?.[0];
-      if (!file) return;
-      const url = URL.createObjectURL(file);
-      const img = el('img', { class: 'preview-img', alt: '선택한 영수증', src: url });
-      img.addEventListener('load', () => URL.revokeObjectURL(url));
-      preview.replaceChildren(img,
-        el('p', { class: 'preview-meta',
-          text: `${file.name} · ${(file.size / 1024).toFixed(0)}KB` }));
+      input.value = ''; // 같은 파일을 다시 골라도 change 가 오도록
+      if (file) void run(file);
     },
   });
 
   return el('div', {},
-    pageHeader('영수증 스캔', '사진은 이 브라우저 안에만 저장되며 외부로 전송되지 않습니다.'),
-
-    preview,
-
-    el('div', { class: 'btn-row' },
-      el('label', { class: 'btn primary', for: 'receipt-file' }, '파일 선택'),
-      el('button', { class: 'btn', type: 'button',
-        onclick: () => alert('카메라 촬영은 P3 에서 구현합니다.') }, '카메라로 촬영'),
+    pageHeader('영수증 등록', '사진은 이 브라우저 안에서만 처리·저장되며 외부로 전송되지 않습니다.'),
+    el('div', { class: 'field' },
+      el('label', { class: 'field-label', for: 'scan-trip', text: '여행' }),
+      tripSelect,
+      langHint,
     ),
+    stage,
+    actionSlot,
     fileInput,
-
-    el('h2', { class: 'section-title', text: '처리 단계' }),
-    el('ol', { class: 'steps' },
-      ...STEPS.map(([n, title, desc]) =>
-        el('li', { class: 'step' },
-          el('span', { class: 'step-num', text: n }),
-          el('div', {},
-            el('span', { class: 'step-title', text: title }),
-            el('span', { class: 'step-desc', text: desc }),
-          ),
-        ),
-      ),
-    ),
-
-    phaseNote('P3·P4', `촬영과 전처리는 P3, OCR 추론은 P4 에서 붙습니다. 모델 ${totalModelMB()}MB 는 첫 사용 시 한 번만 내려받습니다.`),
+    statusSlot,
+    linesSlot,
+    phaseNote('P5', '지금은 읽은 글자를 저장하고 내용을 직접 입력합니다. 파서가 붙으면 품목과 금액이 자동으로 채워집니다.'),
   );
 }

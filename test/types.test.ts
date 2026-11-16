@@ -77,8 +77,16 @@ test('사용자가 확인한 영수증은 상태를 되돌리지 않는다', () 
   assert.equal(resolveStatus(r), 'confirmed');
 });
 
-test('인식 전 영수증은 pending 을 유지한다', () => {
+test('사진만 있는 영수증은 pending 을 유지한다', () => {
+  // P3 스캔 직후: 이미지만 저장되고 품목도 총액도 없는 상태
   assert.equal(resolveStatus(receipt(0, [], 'pending')), 'pending');
+});
+
+test('pending 영수증에 내용이 들어오면 교차검증으로 넘어간다', () => {
+  // 스캔으로 저장한 뒤 사용자가 수기로 채운 경우 (P3), 또는 P4 의 OCR 결과가 들어온 경우.
+  // 여기서 pending 이 안 풀리면 영원히 "인식 대기" 로 남는다.
+  assert.equal(resolveStatus(receipt(13000, [item(8000), item(5000)], 'pending')), 'parsed');
+  assert.equal(resolveStatus(receipt(13000, [item(8000)], 'pending')), 'needs_review');
 });
 
 test('여행 합계와 카테고리별 집계', () => {
@@ -108,4 +116,14 @@ test('검증 실패·인식 전 영수증은 카테고리 집계에서 빠진다
   assert.equal(isCountable(good), true);
   assert.equal(isCountable(bad), false);
   assert.equal(isCountable(notYet), false);
+});
+
+test('통화로 영수증 언어를 추천한다', async () => {
+  const { suggestOcrLanguage, tripOcrLanguage } = await import('../src/types.ts');
+  assert.equal(suggestOcrLanguage('JPY'), 'zh_ja');
+  assert.equal(suggestOcrLanguage('cny'), 'zh_ja');
+  assert.equal(suggestOcrLanguage('KRW'), 'korean');
+  assert.equal(suggestOcrLanguage('USD'), 'korean', '영어는 한국어 모델도 읽는다');
+  assert.equal(tripOcrLanguage({}), 'korean', '언어 필드가 생기기 전에 만든 여행은 한국어');
+  assert.equal(tripOcrLanguage({ ocrLanguage: 'zh_ja' }), 'zh_ja');
 });

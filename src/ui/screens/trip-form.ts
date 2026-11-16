@@ -4,6 +4,7 @@ import { field, selectField, readForm, errorBox, CURRENCIES } from '../form.ts';
 import { createTrip, getTrip, updateTrip, deleteTrip } from '../../storage/trips.ts';
 import { ensurePersistOnce } from '../../storage/persist.ts';
 import { navigate } from '../../router.ts';
+import { OCR_LANGUAGES, OCR_LANGUAGE_LABELS, suggestOcrLanguage, tripOcrLanguage } from '../../types.ts';
 
 export async function renderTripForm(params: Record<string, string>): Promise<HTMLElement> {
   const id = params['id'];
@@ -25,8 +26,7 @@ export async function renderTripForm(params: Record<string, string>): Promise<HT
     field({ label: '여행 이름', name: 'name', required: true,
       value: trip?.name ?? '', placeholder: '예: 오사카 3박 4일' }),
     field({ label: '지역', name: 'destination', required: true,
-      value: trip?.destination ?? '', placeholder: '예: 일본 오사카',
-      hint: 'P6 에서 이 지역에 맞는 인식 모델을 고르는 데 쓰입니다.' }),
+      value: trip?.destination ?? '', placeholder: '예: 일본 오사카' }),
     el('div', { class: 'field-row' },
       field({ label: '시작일', name: 'startDate', type: 'date', required: true,
         value: trip?.startDate ?? today }),
@@ -34,12 +34,26 @@ export async function renderTripForm(params: Record<string, string>): Promise<HT
         value: trip?.endDate ?? today }),
     ),
     selectField('통화', 'currency', CURRENCIES, trip?.currency ?? 'KRW'),
+    selectField('영수증 언어', 'ocrLanguage',
+      OCR_LANGUAGES.map((l) => [l, OCR_LANGUAGE_LABELS[l]] as const),
+      trip ? tripOcrLanguage(trip) : suggestOcrLanguage('KRW')),
+    el('p', { class: 'field-hint',
+      text: '이 언어에 맞는 인식 모델로 영수증을 읽습니다. 한국어 모델은 일본어를, 일본어·중국어 모델은 한글을 읽지 못합니다.' }),
     errorSlot,
     el('div', { class: 'btn-row' },
       el('button', { class: 'btn primary', type: 'submit' }, editing ? '저장' : '만들기'),
       el('a', { class: 'btn', href: editing ? `#/trips/${id}` : '#/' }, '취소'),
     ),
   );
+
+  // 새 여행이면 통화를 바꿀 때 언어도 따라 바꾼다. 사용자가 언어를 직접 고르면 그 뒤로는 건드리지 않는다.
+  const currencySel = form.querySelector<HTMLSelectElement>('select[name="currency"]');
+  const langSel = form.querySelector<HTMLSelectElement>('select[name="ocrLanguage"]');
+  let langTouched = editing;
+  langSel?.addEventListener('change', () => { langTouched = true; });
+  currencySel?.addEventListener('change', () => {
+    if (!langTouched && langSel && currencySel) langSel.value = suggestOcrLanguage(currencySel.value);
+  });
 
   form.addEventListener('submit', (ev) => {
     ev.preventDefault();
@@ -59,6 +73,9 @@ export async function renderTripForm(params: Record<string, string>): Promise<HT
       startDate: v['startDate'] ?? today,
       endDate: v['endDate'] ?? today,
       currency: v['currency'] ?? 'KRW',
+      ocrLanguage: (OCR_LANGUAGES as readonly string[]).includes(v['ocrLanguage'] ?? '')
+        ? (v['ocrLanguage'] as (typeof OCR_LANGUAGES)[number])
+        : suggestOcrLanguage(v['currency'] ?? 'KRW'),
     };
 
     void (async () => {

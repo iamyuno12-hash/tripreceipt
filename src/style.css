@@ -479,3 +479,36 @@ code {
   font-size: 0.84rem;
 }
 .sample-banner strong { color: var(--warn); }
+
+/* ---------- OCR 진단 화면 ---------- */
+
+.ocr-status {
+  margin: 12px 0 0;
+  padding: 9px 12px;
+  border-radius: 6px;
+  background: var(--surface-2);
+  border-left: 3px solid var(--border);
+  font-size: 0.86rem;
+}
+.ocr-status.ok { background: var(--accent-soft); border-left-color: var(--ok); }
+.ocr-status.fail { background: var(--warn-soft); border-left-color: var(--fail); color: var(--fail); }
+
+table.ocr-lines td { font-size: 0.85rem; }
+table.ocr-lines td.dim { color: var(--text-dim); font-size: 0.78rem; }
+table.ocr-lines tr.low-score { background: var(--warn-soft); }
+
+.toggle-row { display: flex; flex-wrap: wrap; gap: 14px; margin-top: 12px; }
+.toggle { display: inline-flex; align-items: center; gap: 6px; font-size: 0.86rem; cursor: pointer; }
+.toggle input { accent-color: var(--accent); }
+
+/* 검수 화면의 원본 사진 — 너무 커지지 않게 제한 */
+.receipt-photo { max-height: 420px; overflow: auto; margin-bottom: 16px; }
+.receipt-photo .preview-img { max-height: 380px; }
+
+/* OCR 이 읽은 글자 원문 (등록 화면·영수증 상세) */
+.ocr-raw { margin: 12px 0; font-size: 0.86rem; }
+.ocr-raw summary { cursor: pointer; color: var(--text-dim); }
+.ocr-raw-text {
+  margin: 8px 0 0; padding: 10px 12px; max-height: 320px; overflow: auto;
+  background: var(--accent-soft); border-radius: 8px; white-space: pre-wrap; font-size: 0.82rem;
+}

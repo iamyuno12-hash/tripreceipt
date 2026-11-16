@@ -25,8 +25,11 @@ export default defineConfig({
     // 모델과 wasm 이 커서 경고가 뜨는 건 정상이다. 임계값만 올려 둔다.
     chunkSizeWarningLimit: 2048,
   },
-  // OpenCV.js / onnxruntime-web 은 사전 번들링에서 제외해야 로딩이 안정적이다.
+  // onnxruntime-web 은 사전 번들링에서 제외한다 (wasm 파일 경로를 스스로 찾기 때문).
+  // OpenCV.js 는 제외하면 안 된다: CommonJS/UMD 형식이라 Vite 가 사전 번들링으로
+  // ES 모듈로 바꿔 줘야 `import cv from '@techstark/opencv-js'` 가 개발 서버에서 동작한다.
+  // (제외했을 때 개발 서버에서만 "does not provide an export named 'default'" 오류가 났다)
   optimizeDeps: {
-    exclude: ['@techstark/opencv-js', 'onnxruntime-web'],
+    exclude: ['onnxruntime-web'],
   },
 });

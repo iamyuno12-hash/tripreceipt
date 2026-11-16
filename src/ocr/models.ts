@@ -10,6 +10,8 @@
  * 용량이 커서 git 에는 올리지 않는다.
  */
 
+import type { OcrLanguage } from '../types.ts';
+
 export interface ModelAsset {
   /** inference.yml 의 Global.model_name 과 반드시 일치해야 하는 값 */
   readonly modelName: string;
@@ -27,21 +29,27 @@ export const DETECTION_MODEL: ModelAsset = {
 };
 
 /**
- * 인식 모델은 언어별로 다르다.
- * 여행 지역에 따라 전환하는 것이 이 프로젝트의 개선 포인트다 (docs/OCR-ENGINE.md 참고).
+ * 인식 모델은 언어별로 다르다. 여행마다 언어를 정한다 (Trip.ocrLanguage).
  *
- * P4 에서는 korean 하나만 붙여 동작을 확인하고,
- * 라틴 문자권 모델 추가는 P6 에서 다룬다.
+ * - korean: 한국어 전용 모델. 영어·숫자도 읽는다. 일본어 가나·한자는 못 읽는다.
+ * - zh_ja : PaddleOCR 기본(중국어) 모델. 중국어·일본어·영어를 읽는다. 한글은 못 읽는다.
+ *
+ * 라틴 문자권(유럽 등) 모델도 같은 방법으로 항목만 추가하면 된다. 아직 시험할 영수증이 없어 넣지 않았다.
  */
-export const RECOGNITION_MODELS = {
+export const RECOGNITION_MODELS: Record<OcrLanguage, ModelAsset> = {
   korean: {
     modelName: 'korean_PP-OCRv5_mobile_rec',
     url: '/models/korean_PP-OCRv5_mobile_rec.tar',
     approxMB: 12.8,
   },
-} as const satisfies Record<string, ModelAsset>;
+  zh_ja: {
+    modelName: 'PP-OCRv5_mobile_rec',
+    url: '/models/PP-OCRv5_mobile_rec.tar',
+    approxMB: 16.7,
+  },
+};
 
-export type RecognitionLanguage = keyof typeof RECOGNITION_MODELS;
+export type RecognitionLanguage = OcrLanguage;
 
 /** 기본 인식 언어 */
 export const DEFAULT_LANGUAGE: RecognitionLanguage = 'korean';

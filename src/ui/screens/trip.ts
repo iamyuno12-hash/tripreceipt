@@ -77,7 +77,7 @@ export async function renderTrip(params: Record<string, string>): Promise<HTMLEl
     ),
 
     receipts.length === 0
-      ? emptyState('아직 영수증이 없습니다.', '스캔 화면에서 영수증을 추가하세요.')
+      ? emptyState('아직 영수증이 없습니다.', '등록 화면에서 영수증 사진을 올리세요.')
       : el('div', { class: 'card-list' }, ...receipts.map(receiptRow)),
 
     el('div', { class: 'btn-row' },

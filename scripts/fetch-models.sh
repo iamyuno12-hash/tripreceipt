@@ -18,6 +18,7 @@ BASE="https://huggingface.co"
 MODELS="
 PaddlePaddle/PP-OCRv5_mobile_det_onnx|PP-OCRv5_mobile_det.tar|PP-OCRv5_mobile_det
 PaddlePaddle/korean_PP-OCRv5_mobile_rec_onnx|korean_PP-OCRv5_mobile_rec.tar|korean_PP-OCRv5_mobile_rec
+PaddlePaddle/PP-OCRv5_mobile_rec_onnx|PP-OCRv5_mobile_rec.tar|PP-OCRv5_mobile_rec
 "
 
 mkdir -p "$OUT_DIR"

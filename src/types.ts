@@ -20,12 +20,42 @@ export type ReceiptStatus =
   /** 사용자가 확인·수정을 마침 */
   | 'confirmed';
 
+// ---------------------------------------------------------------------------
+// 인식 언어
+//
+// 인식 모델은 언어별로 다르다. 한국어 모델은 일본어 가나·한자를 읽지 못하고
+// (일본 영수증 3장에서 품목명 오류 68%), 중·일 모델은 한글을 읽지 못한다.
+// 그래서 여행마다 언어를 정하고 그 여행의 영수증은 그 모델로 읽는다.
+// 근거: docs/OCR-ENGINE.md 3.9 절.
+// ---------------------------------------------------------------------------
+
+/** korean: 한국어 + 영어 / zh_ja: 중국어·일본어 + 영어 */
+export const OCR_LANGUAGES = ['korean', 'zh_ja'] as const;
+export type OcrLanguage = (typeof OCR_LANGUAGES)[number];
+
+export const OCR_LANGUAGE_LABELS: Record<OcrLanguage, string> = {
+  korean: '한국어 (영어 포함)',
+  zh_ja: '일본어·중국어 (영어 포함)',
+};
+
+/** 통화로 인식 언어를 추천한다. 여행 만들기 화면의 기본값으로만 쓰고, 사용자가 바꿀 수 있다. */
+export function suggestOcrLanguage(currency: string): OcrLanguage {
+  return ['JPY', 'CNY', 'TWD', 'HKD'].includes(currency.toUpperCase()) ? 'zh_ja' : 'korean';
+}
+
+/** 저장된 여행의 인식 언어. 이 필드가 생기기 전에 만든 여행은 한국어로 본다. */
+export function tripOcrLanguage(trip: Pick<Trip, 'ocrLanguage'> | undefined): OcrLanguage {
+  return trip?.ocrLanguage ?? 'korean';
+}
+
 export interface Trip {
   readonly id: string;
   /** 여행 이름 (예: "오사카 3박 4일") */
   readonly name: string;
-  /** 지역. P6 에서 인식 모델 선택에 쓰인다 */
+  /** 지역 (표시용) */
   readonly destination: string;
+  /** 영수증 인식 언어. 없으면 한국어 (tripOcrLanguage 참고) */
+  readonly ocrLanguage?: OcrLanguage;
   /** ISO 날짜 (YYYY-MM-DD) */
   readonly startDate: string;
   readonly endDate: string;
@@ -65,6 +95,34 @@ export interface Receipt {
   /** OCR 평균 신뢰도 (0~1). 아직 인식 전이면 null */
   readonly confidence: number | null;
   readonly items: readonly ReceiptItem[];
+  /**
+   * OCR 원본 결과. P5 파서가 이것으로 품목·금액을 채운다.
+   * 좌표는 함께 저장한 이미지(imageId) 기준이다. 수기 입력만 한 영수증이면 없다.
+   */
+  readonly ocr?: OcrSnapshot | null;
+}
+
+/** OCR 이 읽은 글자 상자 하나 */
+export interface OcrLineRecord {
+  readonly text: string;
+  /** 모델 신뢰도 0~1. 높아도 틀릴 수 있다 (솥밥→솔밥 99.8%) — 정확도 판단에 쓰지 않는다 */
+  readonly score: number;
+  readonly poly: readonly { readonly x: number; readonly y: number }[];
+}
+
+export interface OcrSnapshot {
+  readonly lang: OcrLanguage;
+  readonly lines: readonly OcrLineRecord[];
+  readonly imageSize: { readonly width: number; readonly height: number };
+  /** 인식을 몇 번 돌렸나. 1 = 기울기가 작아 1차 결과를 그대로 씀 */
+  readonly passes: number;
+  /** 1차 인식으로 잰 글자 줄 각도(도)와 원본 기준 글자 높이(px) */
+  readonly angle: number;
+  readonly textHeight: number;
+  /** 적용한 전처리 단계 (표시·디버깅용) */
+  readonly steps: readonly string[];
+  readonly ms: { readonly total: number; readonly firstPass: number; readonly preprocess: number; readonly secondPass: number };
+  readonly recordedAt: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -103,12 +161,18 @@ export function crossCheck(receipt: Receipt): CrossCheckResult {
 
 /**
  * 교차검증 결과로 상태를 판정한다.
- * 사용자가 이미 확인한(confirmed) 영수증은 다시 되돌리지 않는다.
+ *
+ * - confirmed 는 사용자의 판단이므로 절대 되돌리지 않는다.
+ * - pending 은 "사진만 있고 아직 내용이 없음" 을 뜻한다. 내용이 하나라도 들어오면
+ *   (P3 스캔 후 수기 입력, 또는 P4 의 OCR 결과) 더 이상 대기 상태가 아니므로
+ *   교차검증으로 판정한다.
  */
 export function resolveStatus(receipt: Receipt): ReceiptStatus {
-  if (receipt.status === 'pending' || receipt.status === 'confirmed') {
-    return receipt.status;
-  }
+  if (receipt.status === 'confirmed') return 'confirmed';
+
+  const empty = receipt.items.length === 0 && receipt.total === 0;
+  if (receipt.status === 'pending' && empty) return 'pending';
+
   return crossCheck(receipt).matches ? 'parsed' : 'needs_review';
 }
 

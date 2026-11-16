@@ -21,3 +21,6 @@ local.properties
 # 로그
 npm-debug.log*
 *.log
+
+# OCR 평가 데이터 (영수증 사진·정답지 = 구매 내역 개인정보) — 공개 저장소에 올리지 않는다
+tools/ocr-eval/data/
