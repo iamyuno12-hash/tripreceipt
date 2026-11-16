@@ -65,7 +65,7 @@ export async function renderHome(): Promise<HTMLElement> {
             } }, '샘플 데이터 넣기'),
         ),
       ),
-      phaseNote('P3·P4', '영수증 사진 촬영과 자동 인식이 추가됩니다. 지금은 수기 입력만 가능합니다.'),
+      phaseNote('P5', '사진에서 읽은 글자로 품목·금액을 자동으로 채우는 기능이 추가됩니다. 지금은 읽은 글자를 보며 직접 입력합니다.'),
     );
   }
 
@@ -76,6 +76,6 @@ export async function renderHome(): Promise<HTMLElement> {
       ...trips.map((t) => tripCard(t, byTrip.get(t.id) ?? [])),
     ),
     el('a', { class: 'btn primary block', href: '#/trips/new' }, '+ 여행 추가'),
-    phaseNote('P3·P4', '영수증 사진 촬영과 자동 인식이 추가됩니다. 지금은 수기 입력만 가능합니다.'),
+    phaseNote('P5', '사진에서 읽은 글자로 품목·금액을 자동으로 채우는 기능이 추가됩니다. 지금은 읽은 글자를 보며 직접 입력합니다.'),
   );
 }

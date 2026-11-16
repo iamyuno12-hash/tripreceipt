@@ -100,6 +100,8 @@ export async function renderSettings(): Promise<HTMLElement> {
     el('div', { class: 'card' },
       row('브라우저 환경 점검', '이후 단계가 의존하는 기능 확인',
         el('a', { class: 'btn', href: '#/settings/env' }, '열기')),
+      row('OCR 테스트', '한국어 인식 동작과 처리 시간 확인',
+        el('a', { class: 'btn', href: '#/settings/ocr-test' }, '열기')),
     ),
 
     el('div', { class: 'danger-zone' },

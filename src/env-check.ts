@@ -119,17 +119,6 @@ export async function runEnvChecks(): Promise<CheckResult[]> {
     });
   }
 
-  // --- 카메라: 영수증 촬영 입력 ---
-  const camera = typeof navigator.mediaDevices?.getUserMedia === 'function';
-  results.push({
-    name: '카메라 API',
-    level: camera ? 'ok' : 'warn',
-    detail: camera
-      ? '사용 가능 (실제 권한은 촬영 시점에 요청)'
-      : '사용 불가 — 파일 선택으로만 입력받아야 합니다',
-    neededFor: 'P3 영수증 촬영',
-  });
-
   // --- 이미지 처리: 전처리 파이프라인 ---
   const imaging =
     typeof createImageBitmap === 'function' && typeof OffscreenCanvas === 'function';

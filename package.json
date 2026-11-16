@@ -2,7 +2,7 @@
   "name": "tripreceipt",
   "version": "0.1.0",
   "private": true,
-  "description": "여행 영수증 OCR 지출 관리 - 브라우저에서 동작하는 오프라인 웹 앱",
+  "description": "여행 영수증 OCR 지출 관리 - 서버 없이 브라우저에서 동작하는 웹 앱",
   "license": "Apache-2.0",
   "type": "module",
   "scripts": {

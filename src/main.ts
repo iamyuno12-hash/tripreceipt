@@ -10,6 +10,7 @@ import { renderSettings } from './ui/screens/settings.ts';
 import { renderTripForm } from './ui/screens/trip-form.ts';
 import { renderReceiptForm } from './ui/screens/receipt-form.ts';
 import { renderEnv } from './ui/screens/env.ts';
+import { renderOcrTest } from './ui/screens/ocr-test.ts';
 
 const ROUTES: readonly Route[] = [
   { name: 'home', path: '/', render: renderHome },
@@ -24,6 +25,7 @@ const ROUTES: readonly Route[] = [
   { name: 'stats', path: '/stats', render: renderStats },
   { name: 'settings', path: '/settings', render: renderSettings },
   { name: 'env', path: '/settings/env', render: renderEnv },
+  { name: 'ocr-test', path: '/settings/ocr-test', render: renderOcrTest },
 ];
 
 function main(): void {

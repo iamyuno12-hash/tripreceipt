@@ -18,7 +18,7 @@ interface NavItem {
 
 const NAV: readonly NavItem[] = [
   { path: '/', label: '여행', glyph: '◆', matchPrefix: '/trip' },
-  { path: '/scan', label: '스캔', glyph: '◎', matchPrefix: '/scan' },
+  { path: '/scan', label: '등록', glyph: '◎', matchPrefix: '/scan' },
   { path: '/stats', label: '통계', glyph: '▤', matchPrefix: '/stats' },
   { path: '/settings', label: '설정', glyph: '⚙', matchPrefix: '/settings' },
 ];
@@ -47,7 +47,7 @@ export function buildShell(): { root: HTMLElement; outlet: HTMLElement; refreshN
 
   const brand = el('div', { class: 'brand' },
     el('span', { class: 'brand-name', text: 'TripReceipt' }),
-    el('span', { class: 'brand-sub', text: '오프라인 영수증 지출 관리' }),
+    el('span', { class: 'brand-sub', text: '여행 영수증 지출 관리' }),
   );
 
   const refreshNav = (): void => {

@@ -9,16 +9,20 @@ import { el, pageHeader, emptyState, phaseNote } from '../dom.ts';
 import { money, dateTime, percent } from '../format.ts';
 import { getReceipt, confirmReceipt } from '../../storage/receipts.ts';
 import { getTrip } from '../../storage/trips.ts';
+import { imageObjectURL } from '../../storage/images.ts';
 import { navigate } from '../../router.ts';
 import { crossCheck, type Receipt } from '../../types.ts';
+import { groupLinesByY, lineTolerance, toTextLines } from '../../ocr/lines.ts';
 
 function checkBanner(r: Receipt): HTMLElement {
   const c = crossCheck(r);
 
   if (r.status === 'pending') {
     return el('div', { class: 'banner' },
-      el('strong', { text: '아직 인식되지 않았습니다.' }),
-      el('p', { text: '이미지만 등록된 상태입니다.' }),
+      el('strong', { text: r.ocr ? '글자는 읽었고, 품목·금액은 아직 비어 있습니다.' : '아직 인식되지 않았습니다.' }),
+      el('p', { text: r.ocr
+        ? '아래 "읽은 글자" 를 보며 직접 입력하세요. 자동 채우기는 P5 에서 붙습니다.'
+        : '이미지만 등록된 상태입니다.' }),
     );
   }
 
@@ -35,6 +39,12 @@ function checkBanner(r: Receipt): HTMLElement {
     el('p', { class: 'banner-hint',
       text: '합계·부가세 같은 줄이 품목으로 잘못 들어갔을 수 있습니다. 아래 표에서 해당 줄을 지우세요.' }),
   );
+}
+
+/** 읽은 글자를 위에서 아래, 같은 줄은 왼쪽부터 이어 붙인다 (P5 파서 전까지 사람이 보는 용도) */
+function ocrText(lines: NonNullable<Receipt['ocr']>['lines']): string {
+  const tl = toTextLines(lines);
+  return groupLinesByY(tl, lineTolerance(tl)).map((g) => g.text).join('\n');
 }
 
 export async function renderReceipt(params: Record<string, string>): Promise<HTMLElement> {
@@ -73,6 +83,24 @@ export async function renderReceipt(params: Record<string, string>): Promise<HTM
 
     checkBanner(receipt),
 
+    // 저장된 원본 사진. 검수 중에 값이 맞는지 눈으로 대조하는 데 쓴다.
+    receipt.imageId
+      ? (() => {
+          const box = el('div', { class: 'preview-box receipt-photo' },
+            el('span', { class: 'preview-hint', text: '사진 불러오는 중…' }));
+          void imageObjectURL(receipt.imageId).then((res) => {
+            if (!res) {
+              box.replaceChildren(el('span', { class: 'preview-hint', text: '사진을 찾을 수 없습니다.' }));
+              return;
+            }
+            const img = el('img', { class: 'preview-img', alt: '영수증 원본', src: res.url });
+            img.addEventListener('load', () => res.revoke(), { once: true });
+            box.replaceChildren(img);
+          });
+          return box;
+        })()
+      : null,
+
     el('div', { class: 'summary-box' },
       el('div', { class: 'summary-item' },
         el('span', { class: 'summary-label', text: '총액' }),
@@ -96,6 +124,13 @@ export async function renderReceipt(params: Record<string, string>): Promise<HTM
           )
         : null,
     ),
+
+    receipt.ocr
+      ? el('details', { class: 'ocr-raw' },
+          el('summary', { text: `읽은 글자 (${receipt.ocr.lines.length}개 · ${receipt.ocr.lang === 'korean' ? '한국어' : '일본어·중국어'} 모델 · ${(receipt.ocr.ms.total / 1000).toFixed(1)}초)` }),
+          el('pre', { class: 'ocr-raw-text', text: ocrText(receipt.ocr.lines) }),
+        )
+      : null,
 
     el('h2', { class: 'section-title', text: '품목' }),
     receipt.items.length === 0

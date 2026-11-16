@@ -17,6 +17,7 @@ import {
 } from '../../storage/receipts.ts';
 import { ensurePersistOnce } from '../../storage/persist.ts';
 import { navigate } from '../../router.ts';
+import { groupLinesByY, lineTolerance, toTextLines } from '../../ocr/lines.ts';
 
 interface Row {
   name: string;
@@ -46,11 +47,14 @@ export async function renderReceiptForm(params: Record<string, string>): Promise
     );
   }
 
-  const rows: Row[] = existing
-    ? existing.items.map((i) => ({
-        name: i.name, quantity: i.quantity, amount: i.amount, category: i.category,
-      }))
-    : [{ name: '', quantity: 1, amount: 0, category: '식비' }];
+  // 스캔으로 저장한 영수증은 품목이 비어 있는 상태로 들어온다(P3).
+  // 그때 입력 칸이 하나도 없으면 바로 쓸 수가 없으므로 빈 줄을 하나 띄워 준다.
+  const rows: Row[] =
+    existing && existing.items.length > 0
+      ? existing.items.map((i) => ({
+          name: i.name, quantity: i.quantity, amount: i.amount, category: i.category,
+        }))
+      : [{ name: '', quantity: 1, amount: 0, category: '식비' }];
 
   const currency = existing?.currency ?? trip.currency;
   const itemsBody = el('tbody', {});
@@ -240,6 +244,17 @@ export async function renderReceiptForm(params: Record<string, string>): Promise
     el('a', { class: 'back-link',
       href: editing ? `#/receipts/${receiptId}` : `#/trips/${trip.id}` }, '← 돌아가기'),
     pageHeader(editing ? '영수증 수정' : '영수증 추가', trip.name),
+    // 사진에서 읽은 글자를 보면서 입력할 수 있게 열어 둔다 (P5 파서가 붙기 전까지)
+    existing?.ocr && existing.ocr.lines.length > 0
+      ? (() => {
+          const tl = toTextLines(existing.ocr.lines);
+          return el('details', { class: 'ocr-raw', open: existing.items.length === 0 },
+            el('summary', { text: `사진에서 읽은 글자 (${tl.length}개)` }),
+            el('pre', { class: 'ocr-raw-text',
+              text: groupLinesByY(tl, lineTolerance(tl)).map((g) => g.text).join('\n') }),
+          );
+        })()
+      : null,
     form,
     editing && receiptId !== undefined
       ? el('div', { class: 'danger-zone' },
