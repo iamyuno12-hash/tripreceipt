@@ -238,3 +238,25 @@ test('newId 는 접두사를 붙이고 매번 다른 값을 만든다', () => {
   assert.equal(ids.size, 200, 'ID 충돌 발생');
   assert.ok([...ids][0]?.startsWith('trip_'));
 });
+
+test('OCR 결과와 여행 언어가 저장·조회된다', async () => {
+  const trip = await createTrip({ ...TRIP, ocrLanguage: 'zh_ja' });
+  assert.equal((await getTrip(trip.id))?.ocrLanguage, 'zh_ja');
+
+  const ocr = {
+    lang: 'zh_ja' as const,
+    lines: [{ text: '¥664', score: 0.98, poly: [{ x: 1, y: 2 }, { x: 50, y: 2 }, { x: 50, y: 30 }, { x: 1, y: 30 }] }],
+    imageSize: { width: 486, height: 1599 },
+    passes: 1, angle: -0.7, textHeight: 28,
+    steps: ['1차 인식 407×1394'],
+    ms: { total: 5000, firstPass: 4900, preprocess: 0, secondPass: 0 },
+    recordedAt: '2026-11-16T09:00:00.000Z',
+  };
+  const r = await createReceipt({
+    tripId: trip.id, imageId: null, merchant: '', purchasedAt: '2026-04-12T10:00:00.000Z', currency: 'JPY',
+    total: 0, tax: null, confidence: 0.98, status: 'pending', items: [], ocr,
+  });
+  assert.equal(r.status, 'pending', '글자만 읽고 품목이 비어 있으면 대기 상태');
+  const back = await getReceipt(r.id);
+  assert.deepEqual(back?.ocr, ocr);
+});
