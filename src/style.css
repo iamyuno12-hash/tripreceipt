@@ -68,6 +68,8 @@ a { color: inherit; text-decoration: none; }
   margin: 0 auto;
   padding: 24px 16px calc(var(--nav-h) + 32px);
 }
+.outlet:has(> .stats-page) { max-width: 1080px; width: 100%; min-width: 0; }
+.stats-page { width: 100%; min-width: 0; }
 
 .nav {
   position: fixed;
@@ -435,11 +437,26 @@ td.num, th.num { text-align: right; white-space: nowrap; }
 .stats-trip-statistics + .stats-trip-statistics { border-top: 1px solid var(--guide-border); }
 .stats-trip-statistics > .stat-head { flex-wrap: wrap; margin-bottom: 12px; }
 .stats-trip-statistics .stats-trip-title { margin: 0; font-size: 1rem; overflow-wrap: anywhere; }
+.stats-travel-controls { display: grid; grid-template-columns: 160px minmax(160px, 1fr) auto; gap: 12px; margin-top: 16px; }
+.stats-travel-controls > .btn { align-self: start; margin-top: 25px; white-space: nowrap; }
+.stats-comparison-card { margin: 20px 0 28px; padding: 18px 20px; border: 1px solid var(--guide-border); border-radius: 10px; background: var(--trip-summary-bg); scroll-margin-top: 24px; }
+.stats-comparison-card .stats-panel-title { font-size: 1rem; }
+.stats-categories { padding-top: 20px; border-top: 1px solid var(--guide-border); scroll-margin-top: 24px; }
+.stats-categories .stats-panel-title { font-size: 1.02rem; }
+.stats-comparison-results { max-height: 480px; overflow-y: auto; margin-top: 16px; padding-right: 10px; }
+.stats-comparison-results:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.stats-comparison-group + .stats-comparison-group { margin-top: 20px; }
+.stats-comparison-currency { margin: 0 0 10px; font-size: 0.9rem; }
+.stats-comparison-item { margin-bottom: 16px; }
+.stats-comparison-item > .stat-head { flex-wrap: wrap; }
+.stats-comparison-name { min-width: 0; font-size: 0.88rem; overflow-wrap: anywhere; }
+.stats-comparison-dates { margin: 2px 0 0; font-size: 0.74rem; color: var(--text-dim); }
+.stats-comparison-amount { white-space: nowrap; }
 .monthly-chart { margin: 0; }
 .monthly-chart-caption { margin-bottom: 4px; font-size: 0.75rem; color: var(--text-dim); }
-.monthly-chart-scroll { overflow-x: auto; }
-.monthly-chart-scroll:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
-.monthly-chart-svg { display: block; width: 100%; min-width: 960px; height: 220px; font-family: inherit; }
+.monthly-chart-viewport { width: 100%; min-width: 0; }
+.monthly-chart-viewport:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.monthly-chart-svg { display: block; width: 100%; min-width: 0; height: 220px; font-family: inherit; }
 .monthly-chart-grid { stroke: var(--border); stroke-width: 1; }
 .monthly-chart-zero { stroke: var(--text-dim); }
 .monthly-chart-tick, .monthly-chart-month-label { fill: var(--text-dim); font-size: 11px; }
@@ -454,6 +471,9 @@ td.num, th.num { text-align: right; white-space: nowrap; }
 .monthly-chart-tooltip-amount { fill: var(--text); font-size: 12px; font-weight: 700; }
 @media (max-width: 520px) {
   .stats-panel { padding: 16px 12px; }
+  .stats-travel-controls { grid-template-columns: 1fr; }
+  .stats-travel-controls > .btn { margin-top: 0; justify-self: start; }
+  .stats-comparison-card { padding: 14px 12px; }
 }
 
 .bars { display: grid; gap: 8px; }

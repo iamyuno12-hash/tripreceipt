@@ -14,6 +14,7 @@ import { prepareExchangeRates } from '../../exchange.ts';
 import { expenseText } from '../exchange-display.ts';
 import { CURRENCIES, selectField } from '../form.ts';
 import { renderMonthlyChart } from '../monthly-chart.ts';
+import { renderTravelStatistics, type TravelFilters } from '../trip-comparison.ts';
 
 /** 모든 여행의 검수 완료된 영수증을 모아, 최근 1년 월별 지출을 통화별로 표시한다. */
 function renderOverallTrend(trips: readonly Trip[], receipts: readonly Receipt[]): HTMLElement {
@@ -47,62 +48,6 @@ function renderOverallTrend(trips: readonly Trip[], receipts: readonly Receipt[]
   );
 }
 
-/** 기준 통화가 같은 여행끼리만 총지출을 비교한다. */
-function renderComparison(
-  trips: readonly Trip[], byTrip: ReadonlyMap<string, Receipt[]>, registeredTripCount = trips.length,
-): HTMLElement {
-  // 표시 필터를 바꿔도 기존 통화별 비교 영역과 막대 값은 유지한다.
-  if (registeredTripCount < 2) {
-    return el('section', { class: 'stat-section stats-panel', 'aria-labelledby': 'stats-comparison-title' },
-      comparisonHeader(),
-      emptyState('여행이 2개 이상 등록되면 지출을 비교할 수 있습니다.'),
-    );
-  }
-
-  const groups = new Map<string, Array<{ name: string; total: number; pending: number; converted: number }>>();
-  for (const trip of trips) {
-    const eligible = (byTrip.get(trip.id) ?? [])
-      .filter(isCountable);
-    const summary = summarizeExpenses(eligible, trip.currency);
-    const rows = groups.get(trip.currency) ?? [];
-    rows.push({ name: trip.name, total: summary.total, pending: summary.pending, converted: summary.converted });
-    groups.set(trip.currency, rows);
-  }
-
-  return el('section', { class: 'stat-section stats-panel', 'aria-labelledby': 'stats-comparison-title' },
-    comparisonHeader(),
-    el('p', { class: 'stat-note',
-      text: '검수 완료된 영수증을 여행 기준 통화로 환산한 금액입니다. 기준 통화가 다른 여행끼리는 구분합니다.' }),
-    ...[...groups.entries()].map(([currency, rows]) => {
-      const sorted = [...rows].sort((a, b) => b.total - a.total);
-      const max = Math.max(1, ...sorted.map(row => Math.max(0, row.total)));
-      return el('div', { style: 'margin-top:16px' },
-        el('h3', { text: `${currency} 기준`, style: 'font-size:0.9rem;margin:0 0 8px' }),
-        ...sorted.map(row =>
-          el('div', { style: 'margin:0 0 12px' },
-            el('div', { class: 'stat-head' },
-              el('span', { text: row.name, style: 'font-size:0.88rem;overflow-wrap:anywhere' }),
-              el('strong', { text: expenseText({ ...row, byCategory: new Map() }, currency), style: 'white-space:nowrap' }),
-            ),
-            row.pending > 0 ? el('p', { class: 'stat-note', text: `환산 대기 ${row.pending}장 제외` }) : null,
-            el('div', { class: 'bar-track', style: 'margin-top:5px' },
-              el('div', { class: 'bar-fill', style: `width:${Math.max(0, row.total) / max * 100}%` }),
-            ),
-          ),
-        ),
-      );
-    }),
-  );
-}
-
-function comparisonHeader(): HTMLElement {
-  return el('header', { class: 'stats-panel-header' },
-    el('h2', { class: 'section-title stats-panel-title', id: 'stats-comparison-title', tabindex: -1,
-      text: '여행 간 지출 비교' }),
-    el('p', { class: 'stats-panel-purpose', text: '여행별 지출 규모를 나란히 비교합니다.' }),
-  );
-}
-
 function renderTripStatistics(trip: Trip, receipts: readonly Receipt[]): HTMLElement {
   const summary = summarizeExpenses(receipts, trip.currency);
   const byCat = summary.byCategory;
@@ -125,9 +70,9 @@ function renderTripStatistics(trip: Trip, receipts: readonly Receipt[]): HTMLEle
     });
 
   const excluded = receipts.filter(r => !isCountable(r)).length;
-  return el('section', { class: 'stat-section stats-trip-statistics', 'aria-label': trip.name },
+  return el('section', { class: 'stat-section stats-trip-statistics', 'aria-label': trip.name, 'data-trip-id': trip.id },
     el('div', { class: 'stat-head' },
-      el('h3', { class: 'section-title stats-trip-title', text: trip.name }),
+      el('h4', { class: 'section-title stats-trip-title', text: trip.name }),
       el('span', {
         class: 'stat-total',
         title: '여행 기준 통화로 환산한 영수증 총액 (검수 전 금액 포함)',
@@ -157,15 +102,17 @@ function renderTripStatistics(trip: Trip, receipts: readonly Receipt[]): HTMLEle
 }
 
 function renderTripCategories(trips: readonly Trip[], byTrip: ReadonlyMap<string, Receipt[]>): HTMLElement {
-  return el('section', { class: 'stat-section stats-panel', 'aria-labelledby': 'stats-categories-title' },
+  return el('section', { class: 'stats-categories', 'aria-labelledby': 'stats-categories-title' },
     el('header', { class: 'stats-panel-header' },
-      el('h2', { class: 'section-title stats-panel-title', id: 'stats-categories-title', tabindex: -1,
+      el('h3', { class: 'section-title stats-panel-title', id: 'stats-categories-title', tabindex: -1,
         text: '여행별 지출 구성' }),
       el('p', { class: 'stats-panel-purpose', text: '각 여행 안에서 분류별로 얼마를 썼는지 살펴봅니다.' }),
     ),
-    el('div', { class: 'stats-trip-list' },
-      ...trips.map(trip => renderTripStatistics(trip, byTrip.get(trip.id) ?? [])),
-    ),
+    trips.length === 0
+      ? emptyState('조건에 맞는 여행이 없습니다.', '기간을 바꾸거나 여행 이름을 지워 보세요.')
+      : el('div', { class: 'stats-trip-list' },
+          ...trips.map(trip => renderTripStatistics(trip, byTrip.get(trip.id) ?? [])),
+        ),
   );
 }
 
@@ -174,7 +121,7 @@ export async function renderStats(): Promise<HTMLElement> {
   const all = await prepareExchangeRates(trips, saved);
 
   if (trips.length === 0) {
-    return el('div', {},
+    return el('div', { class: 'stats-page' },
       pageHeader('통계'),
       emptyState('집계할 여행이 없습니다.', '여행을 만들고 영수증을 추가하면 분류별 지출이 보입니다.'),
     );
@@ -204,6 +151,7 @@ export async function renderStats(): Promise<HTMLElement> {
     text: '여행의 집계 기준 통화로 구분합니다.' }));
   const selectionStatus = el('p', { class: 'stat-note', role: 'status', 'aria-live': 'polite' });
   const results = el('div', { id: 'stats-results' });
+  const travelFilters: TravelFilters = { period: 'year', query: '' };
 
   function drawStatistics(): void {
     const currency = select.value;
@@ -213,8 +161,8 @@ export async function renderStats(): Promise<HTMLElement> {
     selectionStatus.textContent = `${currency ? `${currency} 기준` : '전체 통화'} · 여행 ${visibleTrips.length}개`;
     results.replaceChildren(
       renderOverallTrend(visibleTrips, visibleReceipts),
-      renderComparison(visibleTrips, byTrip, trips.length),
-      renderTripCategories(visibleTrips, byTrip),
+      renderTravelStatistics(visibleTrips, byTrip, trips.length, travelFilters,
+        selected => renderTripCategories(selected, byTrip)),
     );
   }
   select.addEventListener('change', drawStatistics);
