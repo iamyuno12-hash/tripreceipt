@@ -1,6 +1,7 @@
 /** 여행 생성·수정 폼. */
 import { el, pageHeader } from '../dom.ts';
 import { field, selectField, readForm, errorBox, CURRENCIES } from '../form.ts';
+import { attachDateCalendar } from '../date-calendar.ts';
 import { createTrip, getTrip, updateTrip, deleteTrip } from '../../storage/trips.ts';
 import { ensurePersistOnce } from '../../storage/persist.ts';
 import { navigate } from '../../router.ts';
@@ -45,6 +46,10 @@ export async function renderTripForm(params: Record<string, string>): Promise<HT
       el('a', { class: 'btn', href: editing ? `#/trips/${id}` : '#/' }, '취소'),
     ),
   );
+
+  const startDateInput = form.querySelector<HTMLInputElement>('input[name="startDate"]');
+  const endDateInput = form.querySelector<HTMLInputElement>('input[name="endDate"]');
+  if (startDateInput && endDateInput) attachDateCalendar(endDateInput, () => startDateInput.value);
 
   // 새 여행이면 통화를 바꿀 때 언어도 따라 바꾼다. 사용자가 언어를 직접 고르면 그 뒤로는 건드리지 않는다.
   const currencySel = form.querySelector<HTMLSelectElement>('select[name="currency"]');

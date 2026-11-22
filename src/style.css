@@ -444,6 +444,69 @@ select.input, select.input.tight {
 }
 .item-category-wrap { min-width: 90px; }
 
+/* 종료일 달력은 선택된 날짜와 처음 보여줄 달을 따로 관리한다. */
+.date-calendar-input { position: relative; }
+.date-calendar-value { padding-right: 44px; }
+.date-calendar-value::-webkit-calendar-picker-indicator { display: none; }
+.date-calendar-trigger {
+  position: absolute;
+  right: 8px;
+  top: 50%;
+  transform: translateY(-50%);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 5px;
+  border: 0;
+  border-radius: 4px;
+  color: var(--text);
+  background: transparent;
+  cursor: pointer;
+}
+.date-calendar-trigger:focus-visible { outline: 2px solid var(--accent); }
+.date-calendar {
+  position: fixed;
+  inset: auto;
+  margin: 0;
+  width: min(320px, calc(100vw - 24px));
+  max-height: calc(100dvh - 24px);
+  overflow: auto;
+  padding: 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  color: var(--text);
+  background: var(--surface);
+  box-shadow: 0 8px 28px #0002;
+  font: inherit;
+}
+.date-calendar-head, .date-calendar-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.date-calendar-head strong { font-size: 0.94rem; }
+.date-calendar-foot { margin-top: 10px; }
+.date-calendar-grid { width: 100%; table-layout: fixed; border-spacing: 2px; margin-top: 8px; }
+.date-calendar-grid th { padding: 4px 0; color: var(--text-dim); font-size: 0.76rem; font-weight: 500; }
+.date-calendar-grid td { padding: 0; text-align: center; }
+.date-calendar-day {
+  width: 100%;
+  min-height: 32px;
+  padding: 4px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  color: var(--text);
+  background: transparent;
+  font: inherit;
+  font-size: 0.84rem;
+  cursor: pointer;
+}
+.date-calendar-day:hover { background: var(--surface-2); }
+.date-calendar-day.trip-start { border-color: var(--border); }
+.date-calendar-day.selected { color: var(--bg); background: var(--accent); }
+.date-calendar-day:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+
 .form-error {
   margin: 0;
   padding: 9px 12px;
