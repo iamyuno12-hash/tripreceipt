@@ -100,6 +100,19 @@ export interface Receipt {
    * 좌표는 함께 저장한 이미지(imageId) 기준이다. 수기 입력만 한 영수증이면 없다.
    */
   readonly ocr?: OcrSnapshot | null;
+  /** 원래 금액은 보존하고, 집계에 사용한 환율을 기준 통화·결제일별로 고정한다. */
+  readonly exchangeRates?: readonly ExchangeRate[];
+}
+
+export interface ExchangeRate {
+  readonly from: string;
+  readonly to: string;
+  /** 원래 통화 1단위당 기준 통화 금액 */
+  readonly rate: number;
+  readonly requestedDate: string;
+  readonly date: string;
+  readonly source: 'frankfurter' | 'manual';
+  readonly recordedAt: string;
 }
 
 /** OCR 이 읽은 글자 상자 하나 */
@@ -134,8 +147,17 @@ export interface OcrSnapshot {
 // 이 함수가 "검수가 필요한 영수증"을 자동으로 골라내는 기준이 된다.
 // ---------------------------------------------------------------------------
 
-/** 금액 비교 허용 오차. 반올림·봉사료 등으로 소액 차이는 날 수 있다. */
+/** 금액 비교 허용 오차: 각 통화의 최소 표시 단위 1개. */
 export const AMOUNT_TOLERANCE = 1;
+
+export function currencyDigits(currency: string): number {
+  try { return new Intl.NumberFormat('ko-KR', { style: 'currency', currency }).resolvedOptions().maximumFractionDigits ?? 2; }
+  catch { return 2; }
+}
+
+export function amountTolerance(currency: string): number {
+  return AMOUNT_TOLERANCE / 10 ** currencyDigits(currency);
+}
 
 export interface CrossCheckResult {
   /** 품목 금액의 합 */
@@ -155,29 +177,32 @@ export function crossCheck(receipt: Receipt): CrossCheckResult {
     itemsTotal,
     statedTotal: receipt.total,
     difference,
-    matches: Math.abs(difference) <= AMOUNT_TOLERANCE,
+    matches: hasReceiptContent(receipt) && Math.abs(difference) <= amountTolerance(receipt.currency) + Number.EPSILON * Math.max(1, receipt.total, itemsTotal) * 4,
   };
 }
 
 /**
  * 교차검증 결과로 상태를 판정한다.
  *
- * - confirmed 는 사용자의 판단이므로 절대 되돌리지 않는다.
+ * - confirmed 는 현재 내용에 대한 사용자 판단이다. 내용 변경 여부는 저장소에서 비교한다.
  * - pending 은 "사진만 있고 아직 내용이 없음" 을 뜻한다. 내용이 하나라도 들어오면
  *   (P3 스캔 후 수기 입력, 또는 P4 의 OCR 결과) 더 이상 대기 상태가 아니므로
  *   교차검증으로 판정한다.
  */
 export function resolveStatus(receipt: Receipt): ReceiptStatus {
+  if (!hasReceiptContent(receipt)) return 'pending';
   if (receipt.status === 'confirmed') return 'confirmed';
-
-  const empty = receipt.items.length === 0 && receipt.total === 0;
-  if (receipt.status === 'pending' && empty) return 'pending';
 
   return crossCheck(receipt).matches ? 'parsed' : 'needs_review';
 }
 
-/** 여행 전체 지출 합계 */
+export function hasReceiptContent(receipt: Pick<Receipt, 'items' | 'total'>): boolean {
+  return receipt.items.length > 0 || receipt.total > 0;
+}
+
+/** 동일 통화 금액의 합. 여행 화면의 혼합 통화 집계는 summarizeExpenses를 쓴다. */
 export function tripTotal(receipts: readonly Receipt[]): number {
+  if (new Set(receipts.map(receipt => receipt.currency)).size > 1) throw new Error('다른 통화는 환산한 뒤 합산하세요.');
   return receipts.reduce((sum, r) => sum + r.total, 0);
 }
 

@@ -5,7 +5,7 @@
  * 그래야 "품목을 고쳤는데 상태가 그대로" 같은 어긋남이 생기지 않는다.
  * P5 의 검수 화면도 이 경로를 그대로 쓴다.
  */
-import { resolveStatus, type Receipt, type ReceiptItem } from '../types.ts';
+import { hasReceiptContent, resolveStatus, type Receipt, type ReceiptItem } from '../types.ts';
 import { getDB, newId } from './db.ts';
 
 /** 저장 전 단계의 품목. id 와 receiptId 는 저장 시점에 채운다. */
@@ -24,6 +24,14 @@ function materialize(receiptId: string, items: readonly ItemDraft[]): ReceiptIte
     receiptId,
     lineIndex: item.lineIndex ?? i,
   }));
+}
+
+/** id·OCR 원문·환율 등 메타데이터는 검수한 내용의 변경으로 세지 않는다. */
+function contentKey(r: Receipt): string {
+  return JSON.stringify([
+    r.tripId, r.imageId, r.merchant, new Date(r.purchasedAt).getTime(), r.currency, r.total, r.tax,
+    r.items.map(i => [i.name, i.quantity, i.unitPrice, i.amount, i.category]),
+  ]);
 }
 
 export async function listReceipts(tripId: string): Promise<Receipt[]> {
@@ -63,7 +71,8 @@ export async function updateReceipt(
   patch: Partial<Omit<ReceiptDraft, 'items'>> & { items?: readonly ItemDraft[] },
 ): Promise<Receipt> {
   const db = await getDB();
-  const existing = await db.get('receipts', id);
+  const tx = db.transaction('receipts', 'readwrite');
+  const existing = await tx.store.get(id);
   if (!existing) throw new Error(`영수증을 찾을 수 없습니다: ${id}`);
 
   const merged: Receipt = {
@@ -71,19 +80,27 @@ export async function updateReceipt(
     ...patch,
     items: patch.items ? materialize(id, patch.items) : existing.items,
   };
-  const updated: Receipt = { ...merged, status: resolveStatus(merged) };
+  const changed = contentKey(existing) !== contentKey(merged);
+  const candidate = existing.status === 'confirmed' && changed
+    ? { ...merged, status: 'parsed' as const }
+    : merged;
+  const updated: Receipt = { ...candidate, status: resolveStatus(candidate) };
 
-  await db.put('receipts', updated);
+  await tx.store.put(updated);
+  await tx.done;
   return updated;
 }
 
 /** 사용자가 검수를 마쳤다고 표시한다. 금액이 안 맞아도 사용자의 판단을 존중한다. */
 export async function confirmReceipt(id: string): Promise<Receipt> {
   const db = await getDB();
-  const existing = await db.get('receipts', id);
+  const tx = db.transaction('receipts', 'readwrite');
+  const existing = await tx.store.get(id);
   if (!existing) throw new Error(`영수증을 찾을 수 없습니다: ${id}`);
+  if (!hasReceiptContent(existing)) throw new Error('내용을 저장한 뒤 확인 완료로 표시하세요.');
   const updated: Receipt = { ...existing, status: 'confirmed' };
-  await db.put('receipts', updated);
+  await tx.store.put(updated);
+  await tx.done;
   return updated;
 }
 

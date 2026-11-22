@@ -9,32 +9,10 @@ import { listTrips } from '../../storage/trips.ts';
 import { listAllReceipts } from '../../storage/receipts.ts';
 import { buildExpenseCsv, downloadCsv } from '../../export/csv.ts';
 import type { Receipt, Trip } from '../../types.ts';
-import { totalsByCategory, tripTotal, isCountable, CATEGORIES } from '../../types.ts';
-
-/** 이번 달부터 정확히 1년 전 같은 달까지 (양 끝 포함 13개월) 월별 지출을 합산한다. */
-function expensesByMonth(
-  receipts: readonly Receipt[], currency: string, today = new Date(),
-): Array<{ key: string; amount: number }> {
-  const totals = new Map<string, number>();
-
-  // 1년 전 같은 달 → 이번 달 순서로 미리 채워 지출 없는 달도 0으로 표시한다.
-  for (let monthsAgo = 12; monthsAgo >= 0; monthsAgo--) {
-    const date = new Date(today.getFullYear(), today.getMonth() - monthsAgo, 1);
-    const key = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
-    totals.set(key, 0);
-  }
-
-  for (const receipt of receipts) {
-    if (!isCountable(receipt) || receipt.currency !== currency) continue;
-    // 결제일이 YYYY-MM-DD 또는 YYYY-MM-DDTHH:mm... 형식이어야 한다.
-    if (!/^\d{4}-\d{2}-\d{2}(?:$|T)/.test(receipt.purchasedAt)) continue;
-    const key = receipt.purchasedAt.slice(0, 7);
-    if (!totals.has(key)) continue; // 기간 밖의 지출은 표시하지 않는다.
-    totals.set(key, (totals.get(key) ?? 0) + receipt.total);
-  }
-
-  return [...totals].map(([key, amount]) => ({ key, amount }));
-}
+import { isCountable, CATEGORIES } from '../../types.ts';
+import { expensesByMonth, summarizeExpenses } from '../../currency.ts';
+import { prepareExchangeRates } from '../../exchange.ts';
+import { expenseText } from '../exchange-display.ts';
 
 /** 숫자를 비교하기 쉬운 막대로 표시한다. */
 function amountBars(
@@ -62,17 +40,19 @@ function renderOverallTrend(trips: readonly Trip[], receipts: readonly Receipt[]
   const eligible = receipts.filter(receipt =>
     tripIds.has(receipt.tripId) && isCountable(receipt),
   );
-  const currencies = [...new Set(eligible.map(receipt => receipt.currency))].sort();
+  const currencies = [...new Set(trips.filter(trip => eligible.some(r => r.tripId === trip.id)).map(trip => trip.currency))].sort();
+  const pending = trips.reduce((n, trip) => n + summarizeExpenses(eligible.filter(r => r.tripId === trip.id), trip.currency).pending, 0);
 
   return el('section', { class: 'stat-section' },
     el('h2', { class: 'section-title', text: '전체 월별 지출 추이 (1년 전 ~ 이번 달)' }),
     el('p', { class: 'stat-note',
-      text: '모든 여행의 검수 완료 영수증을 월별로 합산합니다. 서로 다른 통화는 환산하지 않고 구분합니다.' }),
+      text: '검수 완료 영수증을 각 여행의 기준 통화로 환산해 합산합니다. 기준 통화가 다른 여행은 구분합니다.' }),
+    pending > 0 ? el('p', { class: 'stat-note', text: `환산 대기 ${pending}장이 빠진 부분 집계입니다.` }) : null,
     currencies.length === 0
       ? emptyState('집계할 지출 내역이 없습니다.')
       : el('div', {},
           ...currencies.map(currency => {
-            const points = expensesByMonth(eligible, currency);
+            const points = expensesByMonth(trips, eligible, currency);
             return el('div', { style: 'margin-top:20px' },
               el('h3', { text: `${currency} 기준`, style: 'font-size:0.94rem;margin:0 0 10px' }),
               amountBars(
@@ -98,20 +78,20 @@ function renderComparison(trips: readonly Trip[], byTrip: ReadonlyMap<string, Re
     );
   }
 
-  const groups = new Map<string, Array<{ name: string; total: number }>>();
+  const groups = new Map<string, Array<{ name: string; total: number; pending: number; converted: number }>>();
   for (const trip of trips) {
     const eligible = (byTrip.get(trip.id) ?? [])
-      .filter(r => r.currency === trip.currency && isCountable(r));
-    const total = tripTotal(eligible);
+      .filter(isCountable);
+    const summary = summarizeExpenses(eligible, trip.currency);
     const rows = groups.get(trip.currency) ?? [];
-    rows.push({ name: trip.name, total });
+    rows.push({ name: trip.name, total: summary.total, pending: summary.pending, converted: summary.converted });
     groups.set(trip.currency, rows);
   }
 
   return el('section', { class: 'stat-section' },
     el('h2', { class: 'section-title', text: '여행 간 지출 비교' }),
     el('p', { class: 'stat-note',
-      text: '검수 완료된 영수증 총액 기준입니다. 통화가 다른 여행은 환산하지 않고 구분합니다.' }),
+      text: '검수 완료된 영수증을 여행 기준 통화로 환산한 금액입니다. 기준 통화가 다른 여행끼리는 구분합니다.' }),
     ...[...groups.entries()].map(([currency, rows]) => {
       const sorted = [...rows].sort((a, b) => b.total - a.total);
       const max = Math.max(1, ...sorted.map(row => Math.max(0, row.total)));
@@ -121,8 +101,9 @@ function renderComparison(trips: readonly Trip[], byTrip: ReadonlyMap<string, Re
           el('div', { style: 'margin:0 0 12px' },
             el('div', { class: 'stat-head' },
               el('span', { text: row.name, style: 'font-size:0.88rem;overflow-wrap:anywhere' }),
-              el('strong', { text: money(row.total, currency), style: 'white-space:nowrap' }),
+              el('strong', { text: expenseText({ ...row, byCategory: new Map() }, currency), style: 'white-space:nowrap' }),
             ),
+            row.pending > 0 ? el('p', { class: 'stat-note', text: `환산 대기 ${row.pending}장 제외` }) : null,
             el('div', { class: 'bar-track', style: 'margin-top:5px' },
               el('div', { class: 'bar-fill', style: `width:${Math.max(0, row.total) / max * 100}%` }),
             ),
@@ -134,7 +115,8 @@ function renderComparison(trips: readonly Trip[], byTrip: ReadonlyMap<string, Re
 }
 
 export async function renderStats(): Promise<HTMLElement> {
-  const [trips, all] = await Promise.all([listTrips(), listAllReceipts()]);
+  const [trips, saved] = await Promise.all([listTrips(), listAllReceipts()]);
+  const all = await prepareExchangeRates(trips, saved);
 
   if (trips.length === 0) {
     return el('div', {},
@@ -152,11 +134,8 @@ export async function renderStats(): Promise<HTMLElement> {
 
   const sections = trips.map((trip) => {
     const receipts = byTrip.get(trip.id) ?? [];
-    // 다른 통화를 환율 변환 없이 합산하지 않는다.
-    const sameCurrency = receipts.filter(r => r.currency === trip.currency);
-    const differentCurrency = receipts.length - sameCurrency.length;
-    const byCat = totalsByCategory(sameCurrency);
-    const total = tripTotal(sameCurrency);
+    const summary = summarizeExpenses(receipts, trip.currency);
+    const byCat = summary.byCategory;
     const categoryTotal = [...byCat.values()].reduce((sum, amount) => sum + amount, 0);
     const max = Math.max(1, ...byCat.values());
 
@@ -175,14 +154,14 @@ export async function renderStats(): Promise<HTMLElement> {
         );
       });
 
-    const excluded = sameCurrency.filter(r => !isCountable(r)).length;
+    const excluded = receipts.filter(r => !isCountable(r)).length;
     return el('section', { class: 'stat-section' },
       el('div', { class: 'stat-head' },
         el('h2', { class: 'section-title', text: trip.name }),
         el('span', {
           class: 'stat-total',
-          title: '여행 기준 통화의 영수증 총액 (검수 전 영수증 포함)',
-          text: money(total, trip.currency),
+          title: '여행 기준 통화로 환산한 영수증 총액 (검수 전 금액 포함)',
+          text: expenseText(summary, trip.currency),
         }),
       ),
       rows.length === 0
@@ -192,9 +171,9 @@ export async function renderStats(): Promise<HTMLElement> {
         ? el('p', { class: 'stat-note',
             text: `검수가 필요하거나 아직 인식되지 않은 ${excluded}장은 분류/전체 추이/비교 집계에서 제외했습니다.` })
         : null,
-      differentCurrency > 0
+      summary.pending > 0
         ? el('p', { class: 'stat-note',
-            text: `기준 통화(${trip.currency})와 다른 통화의 영수증 ${differentCurrency}장은 합계와 통계에서 제외했습니다. CSV에는 포함됩니다.` })
+            text: `환산 대기 ${summary.pending}장은 합계와 통계에서 빠져 있습니다. 해당 영수증 수정 화면에서 환율을 입력하세요. CSV에는 원금액과 대기 상태가 포함됩니다.` })
         : null,
       el('div', { class: 'btn-row' },
         el('button', {

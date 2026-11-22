@@ -1,14 +1,14 @@
 /** 부가세 비율 계산과 직접 입력. 저장되는 값은 기존 tax 금액 하나다. */
 import { el } from './dom.ts';
 import { money } from './format.ts';
+import { convertAmount, currencyDigits } from '../currency.ts';
 
 export type TaxBasis = 'included' | 'percentage';
 
 /** 화면의 통화 표시 기준에 맞춰 원·엔은 정수, 그 외 통화는 소수 둘째 자리로 반올림한다. */
 export function calculateTax(total: number, rate: number, basis: TaxBasis, currency: string): number {
   const amount = total * rate / (basis === 'included' ? 100 + rate : 100);
-  const scale = currency === 'KRW' || currency === 'JPY' ? 1 : 100;
-  return Math.round((amount + Number.EPSILON) * scale) / scale;
+  return convertAmount(amount, 1, currency);
 }
 
 export interface TaxField {
@@ -88,7 +88,7 @@ export function createTaxField(
   function refresh(): void {
     error = null;
     const currency = currencyInput.value;
-    input.step = currency === 'KRW' || currency === 'JPY' ? '1' : '0.01';
+    input.step = String(10 ** -currencyDigits(currency));
     basisControls.hidden = entry !== 'percent';
     percentControls.hidden = entry !== 'percent';
     input.readOnly = entry === 'percent';

@@ -6,7 +6,6 @@ export function money(amount: number, currency: string): string {
     return new Intl.NumberFormat('ko-KR', {
       style: 'currency',
       currency,
-      maximumFractionDigits: currency === 'KRW' || currency === 'JPY' ? 0 : 2,
     }).format(amount);
   } catch {
     return `${amount.toLocaleString('ko-KR')} ${currency}`;

@@ -203,6 +203,15 @@ a { color: inherit; text-decoration: none; }
 .trip-head { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; }
 .trip-name { margin: 0; font-size: 1.05rem; }
 .trip-amount { font-weight: 700; color: var(--accent); white-space: nowrap; }
+.trip-head { flex-wrap: wrap; }
+.conversion-note { display: grid; gap: 3px; color: var(--text-dim); font-size: 0.8rem; }
+.exchange-field { border: 1px solid var(--border); border-radius: 10px; padding: 14px; gap: 8px; }
+.exchange-field[hidden] { display: none; }
+.exchange-controls { display: flex; align-items: center; flex-wrap: wrap; gap: 8px 12px; }
+.exchange-rate { max-width: 210px; }
+.exchange-preview { font-size: 0.88rem; color: var(--accent); overflow-wrap: anywhere; }
+.ocr-apply { display: flex; align-items: center; flex-wrap: wrap; gap: 8px 14px; }
+.ocr-apply .field-hint { flex: 1; min-width: 180px; }
 .trip-meta { margin: 2px 0 0; color: var(--text-dim); font-size: 0.85rem; }
 
 .badges { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
@@ -616,6 +625,27 @@ table.ocr-lines tr.low-score { background: var(--warn-soft); }
 .toggle input { accent-color: var(--accent); }
 
 /* 검수 화면의 원본 사진 — 너무 커지지 않게 제한 */
+.receipt-image-panel {
+  margin: 0 0 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+}
+.receipt-image-panel summary { padding: 12px 14px; font-size: 0.88rem; font-weight: 600; cursor: pointer; }
+.receipt-image-body { padding: 0 14px 14px; }
+.receipt-image-body p { margin: 8px 0 0; }
+.receipt-image-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-bottom: 10px; }
+.receipt-image-toolbar .btn:disabled { opacity: 0.45; cursor: default; }
+.receipt-image-zoom { min-width: 42px; text-align: center; font-size: 0.8rem; font-variant-numeric: tabular-nums; }
+.receipt-image-viewport {
+  height: min(360px, 60vh);
+  overflow: auto;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface-2);
+}
+.receipt-image-viewport > .preview-hint { display: block; padding: 20px 12px; text-align: center; }
+.receipt-image-canvas { display: block; margin: 0 auto; max-width: none; max-height: none; }
 .receipt-photo { max-height: 420px; overflow: auto; margin-bottom: 16px; }
 .receipt-photo .preview-img { max-height: 380px; }
 

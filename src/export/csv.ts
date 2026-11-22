@@ -2,10 +2,11 @@
  * P6 지출 내역 CSV 내보내기.
  *
  * - 모든 영수증을 보존하고 상태와 집계 포함 여부를 함께 기록한다.
- * - 통화를 환산/합산하지 않고 원본 통화를 각 행에 표시한다.
+ * - 원본 통화·금액과 여행 기준 통화의 환산액·환율을 함께 보존한다.
  * - 영수증 총액/세금은 첫 품목 행에만 기록해 스프레드시트에서 중복 합산을 피한다.
  */
 import { isCountable, type Receipt, type Trip } from '../types.ts';
+import { convertedTotal, convertAmount, paymentDate, receiptRate } from '../currency.ts';
 
 type CsvValue = string | number | null | undefined;
 
@@ -23,6 +24,17 @@ const HEADERS = [
   '수량',
   '단가',
   '품목금액',
+  '영수증총액',
+  '부가세',
+  '집계기준통화',
+  '적용환율',
+  '환율기준일',
+  '환율조회기준일',
+  '환율출처',
+  '환산상태',
+  '환산품목금액',
+  '환산영수증총액',
+  '환산부가세',
 ] as const;
 
 /** 쉼표/따옴표/줄바꿈을 CSV 규칙에 맞게 처리하고, 셀 수식 실행을 방지한다. */
@@ -54,6 +66,11 @@ export function buildExpenseCsv(
       .sort((a, b) => a.purchasedAt.localeCompare(b.purchasedAt));
 
     for (const receipt of tripReceipts) {
+      const converted = receipt.status === 'pending' ? null : convertedTotal(receipt, trip.currency);
+      const snapshot = receiptRate(receipt, trip.currency);
+      const rate = receipt.currency === trip.currency ? 1 : snapshot?.rate;
+      const conversionState = receipt.status === 'pending' ? '내용 대기' : converted === null ? '환산 대기'
+        : receipt.currency === trip.currency ? '같은 통화' : '환산 완료';
       const prefix: CsvValue[] = [
         trip.name,
         trip.id,
@@ -61,16 +78,25 @@ export function buildExpenseCsv(
         receipt.merchant,
         receipt.id,
         receipt.status,
-        isCountable(receipt) ? '예' : '아니요',
+        isCountable(receipt) && converted !== null ? '예' : '아니요',
         receipt.currency,
+      ];
+      const suffix = (first: boolean, itemAmount?: number): CsvValue[] => [
+        first ? receipt.total : '', first ? receipt.tax : '', trip.currency, rate,
+        snapshot?.date ?? (rate === 1 ? paymentDate(receipt.purchasedAt) : ''),
+        snapshot?.requestedDate ?? (rate === 1 ? paymentDate(receipt.purchasedAt) : ''),
+        snapshot?.source ?? (rate === 1 ? '동일 통화' : ''), conversionState,
+        itemAmount !== undefined && rate !== undefined && converted !== null ? convertAmount(itemAmount, rate, trip.currency) : '',
+        first ? converted : '',
+        first && receipt.tax !== null && rate !== undefined && converted !== null ? convertAmount(receipt.tax, rate, trip.currency) : '',
       ];
 
       if (receipt.items.length === 0) {
-        rows.push([...prefix, '', '', '', '', '']);
+        rows.push([...prefix, '', '', '', '', '', ...suffix(true)]);
         continue;
       }
 
-      receipt.items.forEach((item) => {
+      receipt.items.forEach((item, index) => {
         rows.push([
           ...prefix,
           item.name,
@@ -78,6 +104,7 @@ export function buildExpenseCsv(
           item.quantity,
           item.unitPrice,
           item.amount,
+          ...suffix(index === 0, item.amount),
         ]);
       });
     }

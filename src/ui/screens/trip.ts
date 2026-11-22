@@ -1,11 +1,14 @@
 /** 여행 상세 = 그 여행의 영수증 목록. */
-import { el, pageHeader, emptyState, phaseNote } from '../dom.ts';
+import { el, pageHeader, emptyState } from '../dom.ts';
 import { money, dateTime, dateRange } from '../format.ts';
 import { getTrip } from '../../storage/trips.ts';
 import { listReceipts } from '../../storage/receipts.ts';
 import { isSampleLoaded } from '../../storage/meta.ts';
 import { sampleBanner } from './home.ts';
-import { tripTotal, crossCheck, type Receipt } from '../../types.ts';
+import { crossCheck, type Receipt } from '../../types.ts';
+import { summarizeExpenses } from '../../currency.ts';
+import { prepareExchangeRates } from '../../exchange.ts';
+import { conversionNote, expenseText } from '../exchange-display.ts';
 
 const STATUS_LABEL: Record<Receipt['status'], string> = {
   pending: '인식 대기',
@@ -14,7 +17,7 @@ const STATUS_LABEL: Record<Receipt['status'], string> = {
   confirmed: '확인됨',
 };
 
-function receiptRow(r: Receipt): HTMLElement {
+function receiptRow(r: Receipt, currency: string): HTMLElement {
   const check = crossCheck(r);
   const isPending = r.status === 'pending';
 
@@ -26,6 +29,7 @@ function receiptRow(r: Receipt): HTMLElement {
     el('div', { class: 'receipt-side' },
       el('span', { class: 'receipt-amount',
         text: isPending ? '—' : money(r.total, r.currency) }),
+      conversionNote(r, currency),
       el('span', { class: `status status-${r.status}`, text: STATUS_LABEL[r.status] }),
     ),
     // 교차검증에 걸린 영수증은 목록에서 이유까지 바로 보여준다.
@@ -48,7 +52,9 @@ export async function renderTrip(params: Record<string, string>): Promise<HTMLEl
     );
   }
 
-  const [receipts, sample] = await Promise.all([listReceipts(trip.id), isSampleLoaded()]);
+  const [savedReceipts, sample] = await Promise.all([listReceipts(trip.id), isSampleLoaded()]);
+  const receipts = await prepareExchangeRates([trip], savedReceipts);
+  const summary = summarizeExpenses(receipts, trip.currency);
   const reviewCount = receipts.filter((r) => r.status === 'needs_review').length;
 
   return el('div', {},
@@ -61,8 +67,8 @@ export async function renderTrip(params: Record<string, string>): Promise<HTMLEl
 
     el('div', { class: 'summary-box' },
       el('div', { class: 'summary-item' },
-        el('span', { class: 'summary-label', text: '총 지출' }),
-        el('span', { class: 'summary-value', text: money(tripTotal(receipts), trip.currency) }),
+        el('span', { class: 'summary-label', text: `총 지출 (${trip.currency})` }),
+        el('span', { class: 'summary-value', text: expenseText(summary, trip.currency) }),
       ),
       el('div', { class: 'summary-item' },
         el('span', { class: 'summary-label', text: '영수증' }),
@@ -76,14 +82,15 @@ export async function renderTrip(params: Record<string, string>): Promise<HTMLEl
         : null,
     ),
 
+    summary.pending > 0 ? el('p', { class: 'stat-note', text: `환산 대기 ${summary.pending}장은 합계에서 빠져 있습니다. 해당 영수증 수정 화면에서 환율을 입력하거나 다시 조회하세요.` }) : null,
+
     receipts.length === 0
       ? emptyState('아직 영수증이 없습니다.', '등록 화면에서 영수증 사진을 올리세요.')
-      : el('div', { class: 'card-list' }, ...receipts.map(receiptRow)),
+      : el('div', { class: 'card-list' }, ...receipts.map(r => receiptRow(r, trip.currency))),
 
     el('div', { class: 'btn-row' },
       el('a', { class: 'btn primary', href: `#/trips/${trip.id}/receipts/new` }, '+ 영수증 직접 입력'),
       el('a', { class: 'btn', href: '#/scan' }, '사진으로 추가'),
     ),
-    phaseNote('P4', '사진으로 추가하면 OCR 이 품목과 금액을 자동으로 채웁니다. 지금은 직접 입력만 저장됩니다.'),
   );
 }

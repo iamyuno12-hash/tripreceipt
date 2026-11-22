@@ -5,23 +5,25 @@
  * 교차검증으로 "의심스러운 영수증"을 골라내 사람이 빠르게 고치게 하는 것이 설계 목표다.
  * P5 에서 실제 수정·저장이 연결된다.
  */
-import { el, pageHeader, emptyState, phaseNote } from '../dom.ts';
+import { el, pageHeader, emptyState } from '../dom.ts';
 import { money, dateTime, percent } from '../format.ts';
 import { getReceipt, confirmReceipt } from '../../storage/receipts.ts';
 import { getTrip } from '../../storage/trips.ts';
 import { imageObjectURL } from '../../storage/images.ts';
 import { navigate } from '../../router.ts';
-import { crossCheck, type Receipt } from '../../types.ts';
+import { crossCheck, hasReceiptContent, type Receipt } from '../../types.ts';
+import { prepareExchangeRates } from '../../exchange.ts';
+import { conversionNote } from '../exchange-display.ts';
 import { groupLinesByY, lineTolerance, toTextLines } from '../../ocr/lines.ts';
 
 function checkBanner(r: Receipt): HTMLElement {
   const c = crossCheck(r);
 
-  if (r.status === 'pending') {
+  if (r.status === 'pending' || !hasReceiptContent(r)) {
     return el('div', { class: 'banner' },
       el('strong', { text: r.ocr ? '글자는 읽었고, 품목·금액은 아직 비어 있습니다.' : '아직 인식되지 않았습니다.' }),
       el('p', { text: r.ocr
-        ? '아래 "읽은 글자" 를 보며 직접 입력하세요. 자동 채우기는 P5 에서 붙습니다.'
+        ? '수정 화면에서 OCR 결과를 반영하고 저장하세요.'
         : '이미지만 등록된 상태입니다.' }),
     );
   }
@@ -49,9 +51,9 @@ function ocrText(lines: NonNullable<Receipt['ocr']>['lines']): string {
 
 export async function renderReceipt(params: Record<string, string>): Promise<HTMLElement> {
   const receiptId = params['id'] ?? '';
-  const receipt = await getReceipt(receiptId);
+  const savedReceipt = await getReceipt(receiptId);
 
-  if (!receipt) {
+  if (!savedReceipt) {
     return el('div', {},
       pageHeader('영수증'),
       emptyState('영수증을 찾을 수 없습니다.'),
@@ -59,7 +61,9 @@ export async function renderReceipt(params: Record<string, string>): Promise<HTM
     );
   }
 
-  const trip = await getTrip(receipt.tripId);
+  const trip = await getTrip(savedReceipt.tripId);
+  const receipt = trip ? (await prepareExchangeRates([trip], [savedReceipt]))[0]! : savedReceipt;
+  const actionError = el('p', { class: 'field-hint', role: 'alert' });
   const c = crossCheck(receipt);
 
   const rows = receipt.items.map((item) =>
@@ -103,6 +107,7 @@ export async function renderReceipt(params: Record<string, string>): Promise<HTM
       el('div', { class: 'summary-item' },
         el('span', { class: 'summary-label', text: '총액' }),
         el('span', { class: 'summary-value', text: money(receipt.total, receipt.currency) }),
+        trip ? conversionNote(receipt, trip.currency, true) : null,
       ),
       receipt.tax !== null
         ? el('div', { class: 'summary-item' },
@@ -149,17 +154,20 @@ export async function renderReceipt(params: Record<string, string>): Promise<HTM
         ),
 
     el('div', { class: 'btn-row' },
-      receipt.status === 'confirmed'
+      receipt.status === 'confirmed' || !hasReceiptContent(receipt)
         ? null
         : el('button', { class: 'btn primary', type: 'button',
             onclick: (ev: Event) => {
               const btn = ev.currentTarget as HTMLButtonElement;
               btn.disabled = true;
-              void confirmReceipt(receipt.id).then(() => navigate(`/trips/${receipt.tripId}`));
+              void confirmReceipt(receipt.id).then(() => navigate(`/trips/${receipt.tripId}`)).catch(err => {
+                btn.disabled = false;
+                actionError.textContent = err instanceof Error ? err.message : '확인하지 못했습니다.';
+              });
             } }, '확인 완료로 표시'),
       el('a', { class: 'btn', href: `#/receipts/${receipt.id}/edit` }, '수정'),
     ),
+    actionError,
 
-    phaseNote('P4·P5', '사진에서 품목을 자동으로 채우고, 검수 결과를 바로 반영하는 흐름이 추가됩니다.'),
   );
 }

@@ -1,11 +1,14 @@
 /** 여행 목록. 앱의 첫 화면이다. */
-import { el, pageHeader, phaseNote } from '../dom.ts';
-import { money, dateRange } from '../format.ts';
+import { el, pageHeader } from '../dom.ts';
+import { dateRange } from '../format.ts';
 import { listTrips } from '../../storage/trips.ts';
 import { listAllReceipts } from '../../storage/receipts.ts';
 import { isSampleLoaded } from '../../storage/meta.ts';
 import { loadSample } from '../../storage/seed.ts';
-import { tripTotal, type Receipt, type Trip } from '../../types.ts';
+import { type Receipt, type Trip } from '../../types.ts';
+import { summarizeExpenses } from '../../currency.ts';
+import { prepareExchangeRates } from '../../exchange.ts';
+import { expenseText } from '../exchange-display.ts';
 
 /** 샘플이 들어 있을 때 화면 맨 위에 띄우는 안내. 실제 인식 결과와 헷갈리지 않게 한다. */
 export function sampleBanner(): HTMLElement {
@@ -18,11 +21,12 @@ export function sampleBanner(): HTMLElement {
 function tripCard(trip: Trip, receipts: Receipt[]): HTMLElement {
   const needsReview = receipts.filter((r) => r.status === 'needs_review').length;
   const pending = receipts.filter((r) => r.status === 'pending').length;
+  const summary = summarizeExpenses(receipts, trip.currency);
 
   return el('a', { class: 'card trip-card', href: `#/trips/${trip.id}` },
     el('div', { class: 'trip-head' },
       el('h2', { class: 'trip-name', text: trip.name }),
-      el('span', { class: 'trip-amount', text: money(tripTotal(receipts), trip.currency) }),
+      el('span', { class: 'trip-amount', text: expenseText(summary, trip.currency) }),
     ),
     el('p', { class: 'trip-meta',
       text: `${trip.destination} · ${dateRange(trip.startDate, trip.endDate)}` }),
@@ -30,16 +34,18 @@ function tripCard(trip: Trip, receipts: Receipt[]): HTMLElement {
       el('span', { class: 'badge', text: `영수증 ${receipts.length}장` }),
       needsReview > 0 ? el('span', { class: 'badge warn', text: `검수 필요 ${needsReview}장` }) : null,
       pending > 0 ? el('span', { class: 'badge', text: `인식 대기 ${pending}장` }) : null,
+      summary.pending > 0 ? el('span', { class: 'badge warn', text: `환산 대기 ${summary.pending}장` }) : null,
     ),
   );
 }
 
 export async function renderHome(): Promise<HTMLElement> {
-  const [trips, allReceipts, sample] = await Promise.all([
+  const [trips, savedReceipts, sample] = await Promise.all([
     listTrips(),
     listAllReceipts(),
     isSampleLoaded(),
   ]);
+  const allReceipts = await prepareExchangeRates(trips, savedReceipts);
 
   const byTrip = new Map<string, Receipt[]>();
   for (const r of allReceipts) {
@@ -65,7 +71,6 @@ export async function renderHome(): Promise<HTMLElement> {
             } }, '샘플 데이터 넣기'),
         ),
       ),
-      phaseNote('P5', '사진에서 읽은 글자로 품목·금액을 자동으로 채우는 기능이 추가됩니다. 지금은 읽은 글자를 보며 직접 입력합니다.'),
     );
   }
 
@@ -76,6 +81,5 @@ export async function renderHome(): Promise<HTMLElement> {
       ...trips.map((t) => tripCard(t, byTrip.get(t.id) ?? [])),
     ),
     el('a', { class: 'btn primary block', href: '#/trips/new' }, '+ 여행 추가'),
-    phaseNote('P5', '사진에서 읽은 글자로 품목·금액을 자동으로 채우는 기능이 추가됩니다. 지금은 읽은 글자를 보며 직접 입력합니다.'),
   );
 }

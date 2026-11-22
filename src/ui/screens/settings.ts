@@ -59,7 +59,8 @@ export async function renderSettings(): Promise<HTMLElement> {
 
     el('h2', { class: 'section-title', text: '저장 상태' }),
     el('div', { class: 'card' },
-      row('저장 위치', '이 브라우저 (IndexedDB) — 외부 전송 없음'),
+      row('저장 위치', '여행·영수증·사진은 이 브라우저에 저장'),
+      row('환율 조회', '통화 코드와 기준일만 참고환율 서비스로 전송'),
       row('저장된 데이터',
         `여행 ${counts.trips}개 · 영수증 ${counts.receipts}장 · 사진 ${counts.images}장`),
       estimate
