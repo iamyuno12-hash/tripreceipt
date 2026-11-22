@@ -8,7 +8,7 @@
  *
  * OCR 결과(글자와 좌표)는 영수증에 함께 저장한다. 품목·금액을 자동으로 채우는 파서는 P5.
  */
-import { el, pageHeader, emptyState, phaseNote } from '../dom.ts';
+import { el, pageHeader, emptyState } from '../dom.ts';
 import { navigate } from '../../router.ts';
 import { listTrips } from '../../storage/trips.ts';
 import { saveImage } from '../../storage/images.ts';
@@ -181,6 +181,5 @@ export async function renderScan(): Promise<HTMLElement> {
     fileInput,
     statusSlot,
     linesSlot,
-    phaseNote('P5', '지금은 읽은 글자를 저장하고 내용을 직접 입력합니다. 파서가 붙으면 품목과 금액이 자동으로 채워집니다.'),
   );
 }
