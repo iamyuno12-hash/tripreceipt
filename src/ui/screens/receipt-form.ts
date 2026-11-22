@@ -9,6 +9,7 @@
 import { el, pageHeader } from '../dom.ts';
 import { field, selectField, readForm, errorBox, CURRENCIES } from '../form.ts';
 import { money } from '../format.ts';
+import { createTaxField } from '../tax-field.ts';
 import { CATEGORIES, AMOUNT_TOLERANCE, type Category } from '../../types.ts';
 import { getTrip } from '../../storage/trips.ts';
 import {
@@ -196,6 +197,9 @@ const total = amounts
     class: 'input', id: 'f-total', name: 'total', type: 'number', step: '1', min: '0',
     value: total === null ? '' : String(total), required: true,
   });
+  const currencyField = selectField('통화', 'currency', CURRENCIES, currency);
+  const currencyInput = currencyField.querySelector<HTMLSelectElement>('select')!;
+  const taxField = createTaxField(totalInput, currencyInput, existing?.tax ?? null);
 
   function itemsSum(): number {
     return rows.reduce((s, r) => s + r.amount, 0);
@@ -313,7 +317,7 @@ const total = amounts
       field({ label: '결제 일시', name: 'purchasedAt', type: 'datetime-local',
         value: purchasedAt, required: true, step: '1',
         hint: dateOnly ? '사진에서 읽은 날짜 ' + dateOnly + ' · 시간을 확인해 입력하세요.' : undefined }),
-      selectField('통화', 'currency', CURRENCIES, currency),
+      currencyField,
     ),
 
     el('h2', { class: 'section-title', text: '품목' }),
@@ -345,15 +349,12 @@ const total = amounts
       } }, '+ 품목 추가'),
 
     el('h2', { class: 'section-title', text: '합계' }),
-    el('div', { class: 'field-row' },
-      el('div', { class: 'field' },
-        el('label', { class: 'field-label', for: 'f-total', text: '영수증 총액' }),
-        totalInput,
-        el('span', { class: 'field-hint', text: '영수증에 찍힌 금액을 그대로 입력하세요.' }),
-      ),
-      field({ label: '부가세 (선택)', name: 'tax', type: 'number', step: '1',
-        value: existing?.tax ?? '' }),
+    el('div', { class: 'field' },
+      el('label', { class: 'field-label', for: 'f-total', text: '영수증 총액' }),
+      totalInput,
+      el('span', { class: 'field-hint', text: '영수증에 찍힌 금액을 그대로 입력하세요.' }),
     ),
+    taxField.element,
     amountHints.length > 0 ? el('p', { class: 'field-hint', text: amountHints.join(' · ') }) : null,
     balance,
     el('p', { class: 'field-hint',
@@ -383,6 +384,11 @@ const total = amounts
       errorSlot.replaceChildren(errorBox('영수증 총액을 입력하세요.'));
       return;
     }
+    const taxError = taxField.validate();
+    if (taxError) {
+      errorSlot.replaceChildren(errorBox(taxError));
+      return;
+    }
 
     const items: ItemDraft[] = [];
     for (const [i, r] of rows.entries()) {
@@ -401,7 +407,7 @@ const total = amounts
       });
     }
 
-    const taxRaw = v['tax'] ?? '';
+    const taxRaw = taxField.input.value;
     const draft = {
       tripId: trip.id,
       imageId: existing?.imageId ?? null,

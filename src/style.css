@@ -444,6 +444,44 @@ select.input, select.input.tight {
 }
 .item-category-wrap { min-width: 90px; }
 
+/* 부가세: 입력 방식과 비율 계산 기준을 구분한다. */
+.tax-field {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+.tax-field legend { padding: 0; margin-bottom: 6px; }
+.tax-options-row { display: flex; align-items: center; gap: 16px; }
+.tax-entry-options { display: flex; flex-shrink: 0; flex-wrap: wrap; gap: 8px 16px; }
+.tax-entry-option { display: inline-flex; align-items: center; gap: 4px; font-size: 0.82rem; cursor: pointer; }
+.tax-entry-option input { margin: 0; accent-color: var(--accent); }
+.tax-percent-controls { display: grid; gap: 8px; }
+.tax-percent-controls[hidden], .tax-basis-row[hidden] { display: none; }
+.tax-basis-row { display: flex; flex: 1; min-width: 0; align-items: center; gap: 10px; }
+.tax-basis-toggle { display: inline-flex; flex-shrink: 0; padding: 2px; border-radius: 7px; background: var(--surface-2); }
+.tax-basis-button {
+  padding: 5px 7px;
+  border: 0;
+  border-radius: 5px;
+  color: var(--text-dim);
+  background: transparent;
+  font: inherit;
+  font-size: 0.76rem;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.tax-basis-button[aria-pressed="true"] { color: var(--bg); background: var(--accent); }
+.tax-basis-button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.tax-basis-description { min-width: 0; flex: 1; line-height: 1.5; }
+.tax-rate-input { position: relative; }
+.tax-rate-input .input { padding-right: 32px; }
+.tax-rate-suffix { position: absolute; right: 12px; top: 50%; transform: translateY(-50%); color: var(--text-dim); pointer-events: none; }
+.tax-field input[readonly] { color: var(--text-dim); background: var(--surface-2); }
+
 /* 종료일 달력은 선택된 날짜와 처음 보여줄 달을 따로 관리한다. */
 .date-calendar-input { position: relative; }
 .date-calendar-value { padding-right: 44px; }
