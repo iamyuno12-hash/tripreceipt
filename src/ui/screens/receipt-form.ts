@@ -96,8 +96,8 @@ function inferCategory(
   return '기타';
 }
 
-function emptyRow(): Row {
-  return { name: '', quantity: 1, unitPrice: null, amount: 0, category: '기타' };
+function emptyRow(category: Category = '기타'): Row {
+  return { name: '', quantity: 1, unitPrice: null, amount: 0, category };
 }
 
 function localDateTimeValue(iso: string): string {
@@ -226,8 +226,25 @@ const total = amounts
 
   function drawRows(): void {
     itemsBody.replaceChildren(
-      ...rows.map((row, idx) =>
-        el('tr', {},
+      ...rows.map((row, idx) => {
+        const amountInput = el('input', {
+          class: 'input tight amt', type: 'number', step: '1',
+          value: String(row.amount), 'aria-label': '금액',
+          oninput: (e: Event) => {
+            row.amount = num((e.target as HTMLInputElement).value);
+            refreshBalance();
+          },
+        });
+
+        // 금액을 직접 고칠 때는 단가를 유지한다. 수량·단가를 바꿀 때만 다시 계산한다.
+        const recalculateAmount = (): void => {
+          if (row.quantity === null || row.unitPrice === null) return;
+          row.amount = row.quantity * row.unitPrice;
+          amountInput.value = String(row.amount);
+          refreshBalance();
+        };
+
+        return el('tr', {},
           el('td', {},
             el('input', { class: 'input tight', value: row.name, placeholder: '품목명',
               oninput: (e: Event) => { row.name = (e.target as HTMLInputElement).value; } }),
@@ -244,34 +261,31 @@ const total = amounts
                 row.quantity = Number.isSafeInteger(quantity) && quantity > 0 ? quantity : null;
                 row.quantityInferred = false;
                 input.title = '수량';
+                recalculateAmount();
               } }),
           ),
           el('td', { class: 'num' },
             el('input', { class: 'input tight amt', type: 'number', min: '0', step: '1',
-              value: row.unitPrice ?? '', placeholder: '자동 계산', 'aria-label': '단가',
+              value: row.unitPrice ?? '', placeholder: '저장 시 계산', 'aria-label': '단가',
               oninput: (e: Event) => {
                 const input = e.target as HTMLInputElement;
                 row.unitPrice = input.value === '' ? null : num(input.value);
+                recalculateAmount();
               } }),
           ),
           el('td', { class: 'num' },
-            el('input', { class: 'input tight amt', type: 'number', step: '1',
-              value: String(row.amount),
-              oninput: (e: Event) => {
-                row.amount = num((e.target as HTMLInputElement).value);
-                refreshBalance();
-              } }),
+            amountInput,
           ),
           el('td', {},
             (() => {
-              const sel = el('select', { class: 'input tight' });
+              const sel = el('select', { class: 'input tight', 'aria-label': '분류' });
               for (const c of CATEGORIES) {
                 sel.appendChild(el('option', { value: c, text: c, selected: c === row.category }));
               }
               sel.addEventListener('change', (e) => {
                 row.category = (e.target as HTMLSelectElement).value as Category;
               });
-              return sel;
+              return el('div', { class: 'item-category-wrap' }, sel);
             })(),
           ),
           el('td', { class: 'num' },
@@ -283,8 +297,8 @@ const total = amounts
                 refreshBalance();
               } }, '삭제'),
           ),
-        ),
-      ),
+        );
+      }),
     );
   }
 
@@ -303,6 +317,8 @@ const total = amounts
     ),
 
     el('h2', { class: 'section-title', text: '품목' }),
+    el('p', { class: 'field-hint',
+      text: '수량·단가를 바꾸면 금액이 다시 계산됩니다. 금액은 할인 등을 반영해 직접 고칠 수 있으며, 이때 단가는 유지됩니다. 단가를 비워 두면 저장할 때 금액÷수량으로 채웁니다.' }),
     fillFromOcr && parsedItems.some((item) => item.quantityInferred)
       ? el('p', { class: 'field-hint', text: '계산한 수량을 영수증과 대조하세요. ' +
           parsedItems.filter((item) => item.quantityInferred).map((item) => item.name).join(', ') })
@@ -324,7 +340,7 @@ const total = amounts
     ),
     el('button', { class: 'btn', type: 'button',
       onclick: () => {
-        rows.push(emptyRow());
+        rows.push(emptyRow(rows.at(-1)?.category));
         drawRows();
       } }, '+ 품목 추가'),
 

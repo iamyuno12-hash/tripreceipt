@@ -11,6 +11,7 @@
   --warn: #9a6a1c;
   --warn-soft: #faf0dc;
   --fail: #a93226;
+  --select-arrow: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8' fill='none'%3E%3Cpath d='M1 1.5 6 6.5 11 1.5' stroke='%236b665e' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
   --radius: 12px;
   --nav-h: 60px;
   font-family: system-ui, -apple-system, 'Segoe UI', 'Noto Sans KR', sans-serif;
@@ -30,6 +31,7 @@
     --warn: #d9ab5c;
     --warn-soft: #39301d;
     --fail: #e07a6e;
+    --select-arrow: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8' fill='none'%3E%3Cpath d='M1 1.5 6 6.5 11 1.5' stroke='%23a09a92' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
   }
 }
 
@@ -430,6 +432,17 @@ code {
 .input.tight { padding: 5px 8px; font-size: 0.85rem; }
 .input.qty { width: 64px; }
 .input.amt { width: 104px; }
+
+/* 전체 드롭다운: 화살표와 텍스트의 여백을 모든 화면에서 통일한다. */
+select.input, select.input.tight {
+  appearance: none;
+  padding-right: 32px;
+  background-image: var(--select-arrow);
+  background-repeat: no-repeat;
+  background-position: right 12px center;
+  background-size: 12px 8px;
+}
+.item-category-wrap { min-width: 90px; }
 
 .form-error {
   margin: 0;

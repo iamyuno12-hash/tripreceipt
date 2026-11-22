@@ -66,11 +66,9 @@ export async function renderReceipt(params: Record<string, string>): Promise<HTM
     el('tr', {},
       el('td', { text: item.name }),
       el('td', { class: 'num', text: String(item.quantity) }),
+      el('td', { class: 'num', text: money(item.unitPrice, receipt.currency) }),
       el('td', { class: 'num', text: money(item.amount, receipt.currency) }),
       el('td', {}, el('span', { class: 'chip', text: item.category })),
-      el('td', { class: 'num' },
-        el('a', { class: 'btn tiny', href: `#/receipts/${receipt.id}/edit` }, '수정'),
-      ),
     ),
   );
 
@@ -141,9 +139,9 @@ export async function renderReceipt(params: Record<string, string>): Promise<HTM
               el('tr', {},
                 el('th', { text: '품목' }),
                 el('th', { class: 'num', text: '수량' }),
+                el('th', { class: 'num', text: '단가' }),
                 el('th', { class: 'num', text: '금액' }),
                 el('th', { text: '분류' }),
-                el('th', { class: 'num', text: '' }),
               ),
             ),
             el('tbody', {}, ...rows),
