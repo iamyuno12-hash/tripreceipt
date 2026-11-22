@@ -9,6 +9,7 @@ import { type Receipt, type Trip } from '../../types.ts';
 import { summarizeExpenses } from '../../currency.ts';
 import { prepareExchangeRates } from '../../exchange.ts';
 import { expenseText } from '../exchange-display.ts';
+import { registrationGuide } from '../registration-guide.ts';
 
 /** 샘플이 들어 있을 때 화면 맨 위에 띄우는 안내. 실제 인식 결과와 헷갈리지 않게 한다. */
 export function sampleBanner(): HTMLElement {
@@ -57,6 +58,7 @@ export async function renderHome(): Promise<HTMLElement> {
   if (trips.length === 0) {
     return el('div', {},
       pageHeader('여행', '여행별로 영수증과 지출을 모아 봅니다.'),
+      registrationGuide(),
       el('div', { class: 'empty' },
         el('p', { text: '아직 여행이 없습니다.' }),
         el('p', { class: 'empty-hint', text: '여행을 만들고 영수증을 추가해 보세요.' }),
@@ -77,6 +79,7 @@ export async function renderHome(): Promise<HTMLElement> {
   return el('div', {},
     sample ? sampleBanner() : null,
     pageHeader('여행', '여행별로 영수증과 지출을 모아 봅니다.'),
+    registrationGuide(),
     el('div', { class: 'card-list' },
       ...trips.map((t) => tripCard(t, byTrip.get(t.id) ?? [])),
     ),

@@ -16,7 +16,7 @@ import { currencyDigits } from '../../currency.ts';
 import { CATEGORIES, amountTolerance, type Category } from '../../types.ts';
 import { getTrip } from '../../storage/trips.ts';
 import {
-  createReceipt, getReceipt, updateReceipt, deleteReceipt, type ItemDraft,
+  createReceipt, getReceipt, updateReceipt, type ItemDraft,
 } from '../../storage/receipts.ts';
 import { ensurePersistOnce } from '../../storage/persist.ts';
 import { navigate } from '../../router.ts';
@@ -505,14 +505,5 @@ const total = amounts
         )
       : null,
     form,
-    editing && receiptId !== undefined
-      ? el('div', { class: 'danger-zone' },
-          el('button', { class: 'btn danger', type: 'button',
-            onclick: () => {
-              if (!confirm('이 영수증을 삭제할까요?')) return;
-              void deleteReceipt(receiptId).then(() => navigate(`/trips/${trip.id}`));
-            } }, '영수증 삭제'),
-        )
-      : null,
   );
 }

@@ -2,7 +2,7 @@
 import { el, pageHeader } from '../dom.ts';
 import { field, selectField, readForm, errorBox, CURRENCIES } from '../form.ts';
 import { attachDateCalendar } from '../date-calendar.ts';
-import { createTrip, getTrip, updateTrip, deleteTrip } from '../../storage/trips.ts';
+import { createTrip, getTrip, updateTrip } from '../../storage/trips.ts';
 import { ensurePersistOnce } from '../../storage/persist.ts';
 import { navigate } from '../../router.ts';
 import { OCR_LANGUAGES, OCR_LANGUAGE_LABELS, suggestOcrLanguage, tripOcrLanguage } from '../../types.ts';
@@ -107,17 +107,5 @@ export async function renderTripForm(params: Record<string, string>): Promise<HT
     el('a', { class: 'back-link', href: editing ? `#/trips/${id}` : '#/' }, '← 돌아가기'),
     pageHeader(editing ? '여행 수정' : '새 여행'),
     form,
-    editing && id !== undefined
-      ? el('div', { class: 'danger-zone' },
-          el('h2', { class: 'section-title', text: '여행 삭제' }),
-          el('p', { class: 'field-hint',
-            text: '이 여행의 영수증과 사진이 함께 삭제됩니다. 되돌릴 수 없습니다.' }),
-          el('button', { class: 'btn danger', type: 'button',
-            onclick: () => {
-              if (!confirm(`"${trip?.name}" 을(를) 삭제할까요? 영수증도 함께 사라집니다.`)) return;
-              void deleteTrip(id).then(() => navigate('/'));
-            } }, '여행 삭제'),
-        )
-      : null,
   );
 }

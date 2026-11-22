@@ -1,7 +1,7 @@
 /** 여행 상세 = 그 여행의 영수증 목록. */
 import { el, pageHeader, emptyState } from '../dom.ts';
 import { money, dateTime, dateRange } from '../format.ts';
-import { getTrip } from '../../storage/trips.ts';
+import { getTrip, deleteTrip } from '../../storage/trips.ts';
 import { listReceipts } from '../../storage/receipts.ts';
 import { isSampleLoaded } from '../../storage/meta.ts';
 import { sampleBanner } from './home.ts';
@@ -9,6 +9,7 @@ import { crossCheck, type Receipt } from '../../types.ts';
 import { summarizeExpenses } from '../../currency.ts';
 import { prepareExchangeRates } from '../../exchange.ts';
 import { conversionNote, expenseText } from '../exchange-display.ts';
+import { createDeleteButton } from '../delete-action.ts';
 
 const STATUS_LABEL: Record<Receipt['status'], string> = {
   pending: '인식 대기',
@@ -56,30 +57,39 @@ export async function renderTrip(params: Record<string, string>): Promise<HTMLEl
   const receipts = await prepareExchangeRates([trip], savedReceipts);
   const summary = summarizeExpenses(receipts, trip.currency);
   const reviewCount = receipts.filter((r) => r.status === 'needs_review').length;
+  const actionError = el('div', { class: 'field-hint', role: 'alert' });
 
   return el('div', {},
     sample ? sampleBanner() : null,
     el('a', { class: 'back-link', href: '#/' }, '← 여행 목록'),
     pageHeader(trip.name, `${trip.destination} · ${dateRange(trip.startDate, trip.endDate)}`),
-    el('div', { class: 'btn-row' },
-      el('a', { class: 'btn tiny', href: `#/trips/${trip.id}/edit` }, '여행 수정'),
-    ),
-
-    el('div', { class: 'summary-box' },
-      el('div', { class: 'summary-item' },
-        el('span', { class: 'summary-label', text: `총 지출 (${trip.currency})` }),
-        el('span', { class: 'summary-value', text: expenseText(summary, trip.currency) }),
+    el('section', { class: 'trip-overview', 'aria-label': '여행 요약' },
+      el('div', { class: 'trip-overview-actions', 'aria-label': '여행 관리' },
+        el('a', { class: 'btn tiny', href: `#/trips/${trip.id}/edit` }, '여행 수정'),
+        createDeleteButton({
+          label: '여행 삭제', tiny: true,
+          message: `"${trip.name}"을(를) 삭제할까요? 이 여행의 영수증과 사진도 함께 삭제되며 되돌릴 수 없습니다.`,
+          remove: () => deleteTrip(trip.id), destination: '/',
+          onError: message => { actionError.textContent = message; },
+        }),
       ),
-      el('div', { class: 'summary-item' },
-        el('span', { class: 'summary-label', text: '영수증' }),
-        el('span', { class: 'summary-value', text: `${receipts.length}장` }),
+      el('div', { class: 'summary-box' },
+        el('div', { class: 'summary-item' },
+          el('span', { class: 'summary-label', text: `총 지출 (${trip.currency})` }),
+          el('span', { class: 'summary-value', text: expenseText(summary, trip.currency) }),
+        ),
+        el('div', { class: 'summary-item' },
+          el('span', { class: 'summary-label', text: '영수증' }),
+          el('span', { class: 'summary-value', text: `${receipts.length}장` }),
+        ),
+        reviewCount > 0
+          ? el('div', { class: 'summary-item' },
+              el('span', { class: 'summary-label', text: '검수 필요' }),
+              el('span', { class: 'summary-value warn', text: `${reviewCount}장` }),
+            )
+          : null,
       ),
-      reviewCount > 0
-        ? el('div', { class: 'summary-item' },
-            el('span', { class: 'summary-label', text: '검수 필요' }),
-            el('span', { class: 'summary-value warn', text: `${reviewCount}장` }),
-          )
-        : null,
+      actionError,
     ),
 
     summary.pending > 0 ? el('p', { class: 'stat-note', text: `환산 대기 ${summary.pending}장은 합계에서 빠져 있습니다. 해당 영수증 수정 화면에서 환율을 입력하거나 다시 조회하세요.` }) : null,

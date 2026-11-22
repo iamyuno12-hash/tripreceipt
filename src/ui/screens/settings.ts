@@ -1,5 +1,5 @@
 /** 설정 화면. 저장 상태 확인과 데이터 관리. */
-import { el, pageHeader, phaseNote } from '../dom.ts';
+import { el, pageHeader } from '../dom.ts';
 import { DETECTION_MODEL, RECOGNITION_MODELS, totalModelMB } from '../../ocr/models.ts';
 import { clearAll, usage } from '../../storage/db.ts';
 import { isSampleLoaded } from '../../storage/meta.ts';
@@ -67,6 +67,10 @@ export async function renderSettings(): Promise<HTMLElement> {
         ? row('사용량', `${mb(estimate.usage)} / ${mb(estimate.quota)}`)
         : null,
       persistRow,
+      el('p', { class: 'field-hint settings-csv-note' },
+        el('a', { href: '#/stats' }, '통계 화면'),
+        '에서 지출 내역을 내려받을 수 있습니다. CSV에는 사진이 포함되지 않습니다.',
+      ),
     ),
 
     el('h2', { class: 'section-title', text: '샘플 데이터' }),
@@ -116,6 +120,5 @@ export async function renderSettings(): Promise<HTMLElement> {
         } }, '전체 삭제'),
     ),
 
-    phaseNote('P6', 'CSV 내보내기가 추가되면 삭제 전에 데이터를 백업할 수 있습니다.'),
   );
 }

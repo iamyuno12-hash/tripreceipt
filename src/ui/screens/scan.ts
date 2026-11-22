@@ -6,7 +6,7 @@
  * 입력은 파일 선택만 둔다. 웹으로 서비스하므로 카메라 화면을 따로 만들지 않았다.
  * 휴대폰 브라우저에서는 파일 선택 창에서 "사진 찍기" 를 고를 수 있어 촬영도 이 경로로 된다.
  *
- * OCR 결과(글자와 좌표)는 영수증에 함께 저장한다. 품목·금액을 자동으로 채우는 파서는 P5.
+ * OCR 결과(글자와 좌표)를 저장하고, 수정 화면에서 품목·금액을 추출해 확인·저장한다.
  */
 import { el, pageHeader, emptyState } from '../dom.ts';
 import { navigate } from '../../router.ts';
@@ -19,6 +19,7 @@ import { analyzeReceipt, type AnalyzeResult } from '../../ocr/pipeline.ts';
 import { meanScore } from '../../image/geometry.ts';
 import { totalModelMB } from '../../ocr/models.ts';
 import { OCR_LANGUAGE_LABELS, tripOcrLanguage, type Trip } from '../../types.ts';
+import { registrationGuide } from '../registration-guide.ts';
 
 function note(text: string, kind: 'info' | 'ok' | 'fail' = 'info'): HTMLElement {
   return el('p', { class: `ocr-status ${kind}`, text });
@@ -32,6 +33,7 @@ export async function renderScan(): Promise<HTMLElement> {
   if (trips.length === 0) {
     return el('div', {},
       pageHeader('영수증 등록'),
+      registrationGuide(),
       emptyState('먼저 여행을 만들어야 합니다.', '영수증은 여행에 속해 저장됩니다.'),
       el('a', { class: 'btn primary block', href: '#/trips/new' }, '여행 만들기'),
     );
@@ -55,6 +57,7 @@ export async function renderScan(): Promise<HTMLElement> {
   const statusSlot = el('div', {});
   const linesSlot = el('div', {});
   const actionSlot = el('div', { class: 'btn-row' });
+  const actionHintSlot = el('div', {});
   let analyzed: AnalyzeResult | null = null;
   let busy = false;
 
@@ -129,7 +132,7 @@ export async function renderScan(): Promise<HTMLElement> {
         total: 0,
         tax: null,
         confidence: analyzed.result.lines.length ? meanScore(analyzed.result.lines) : null,
-        // 품목·금액은 P5 파서가 채운다. 그 전까지는 대기 상태로 두고 직접 입력한다.
+        // 먼저 사진·OCR 원문을 등록한다. 추출된 품목·금액은 수정 화면의 저장으로 확정한다.
         status: 'pending',
         items: [],
         ocr: analyzed.snapshot,
@@ -144,6 +147,8 @@ export async function renderScan(): Promise<HTMLElement> {
   }
 
   function drawActions(mode: 'idle' | 'busy' | 'ready'): void {
+    actionHintSlot.replaceChildren(...(mode === 'ready' ? [el('p', { class: 'field-hint',
+      text: '사진과 읽은 글자를 먼저 등록합니다. 다음 수정 화면에서 내용을 확인하고 저장을 눌러 주세요.' })] : []));
     if (mode === 'busy') {
       actionSlot.replaceChildren(el('button', { class: 'btn', type: 'button', disabled: true }, '처리 중…'));
       return;
@@ -171,6 +176,7 @@ export async function renderScan(): Promise<HTMLElement> {
 
   return el('div', {},
     pageHeader('영수증 등록', '사진은 이 브라우저 안에서만 처리·저장되며 외부로 전송되지 않습니다.'),
+    registrationGuide(),
     el('div', { class: 'field' },
       el('label', { class: 'field-label', for: 'scan-trip', text: '여행' }),
       tripSelect,
@@ -178,6 +184,7 @@ export async function renderScan(): Promise<HTMLElement> {
     ),
     stage,
     actionSlot,
+    actionHintSlot,
     fileInput,
     statusSlot,
     linesSlot,

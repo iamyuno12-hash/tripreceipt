@@ -2,6 +2,12 @@
   --bg: #fbfaf7;
   --surface: #ffffff;
   --surface-2: #f4f1ec;
+  --guide-accent: #b44d0e;
+  --guide-border: #c4cfd6;
+  --trip-summary-bg: #f0f4f7;
+  --trip-summary-border: #83949f;
+  --trip-control-bg: #dedbd6;
+  --trip-control-hover: #d1cec8;
   --border: #e4e0d8;
   --text: #22201c;
   --text-dim: #6b665e;
@@ -22,6 +28,12 @@
     --bg: #1a1917;
     --surface: #232120;
     --surface-2: #2b2927;
+    --guide-accent: #f0a15f;
+    --guide-border: #4d5a64;
+    --trip-summary-bg: #242d33;
+    --trip-summary-border: #7b919e;
+    --trip-control-bg: #45423e;
+    --trip-control-hover: #55514c;
     --border: #3a3734;
     --text: #ece9e4;
     --text-dim: #a09a92;
@@ -212,6 +224,18 @@ a { color: inherit; text-decoration: none; }
 .exchange-preview { font-size: 0.88rem; color: var(--accent); overflow-wrap: anywhere; }
 .ocr-apply { display: flex; align-items: center; flex-wrap: wrap; gap: 8px 14px; }
 .ocr-apply .field-hint { flex: 1; min-width: 180px; }
+.registration-guide { margin: 0 0 20px; padding: 12px 16px; border: 1px solid var(--guide-border); border-radius: 9px; background: var(--surface); font-size: 0.85rem; line-height: 1.65; }
+.registration-guide p { margin: 0; overflow-wrap: anywhere; }
+.registration-flow { display: flex; flex-wrap: wrap; align-items: baseline; gap: 8px 20px; }
+.registration-flow-label { flex-shrink: 0; color: var(--guide-accent); }
+.registration-flow-steps { flex: 1 1 220px; min-width: 0; }
+.registration-guide details { margin-top: 10px; color: var(--text-dim); }
+.registration-guide summary { cursor: pointer; }
+.registration-guide .guide-status-list { display: grid; gap: 10px; margin: 12px 0 0; font-size: 0.75rem; line-height: 1.7; }
+.guide-status-row { display: grid; grid-template-columns: max-content minmax(0, 1fr); align-items: start; column-gap: 12px; }
+.guide-status-row dt, .guide-status-row dd { margin: 0; }
+.guide-status-row dd { overflow-wrap: anywhere; }
+.registration-guide .guide-status-tag { display: inline-block; padding: 2px 8px; font-size: 0.68rem; line-height: 1.6; white-space: nowrap; }
 .trip-meta { margin: 2px 0 0; color: var(--text-dim); font-size: 0.85rem; }
 
 .badges { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
@@ -240,6 +264,31 @@ a { color: inherit; text-decoration: none; }
 .summary-label { font-size: 0.78rem; color: var(--text-dim); }
 .summary-value { font-size: 1.05rem; font-weight: 700; }
 .summary-value.warn { color: var(--warn); }
+
+.trip-overview {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: start;
+  gap: 16px 20px;
+  padding: 18px;
+  margin-bottom: 20px;
+  border: 2px solid var(--trip-summary-border);
+  border-radius: var(--radius);
+  background: var(--trip-summary-bg);
+}
+.trip-overview .summary-box { grid-column: 1; grid-row: 1; min-width: 0; margin: 0; padding: 0; border: 0; background: transparent; }
+.trip-overview-actions { grid-column: 2; grid-row: 1; display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; }
+.trip-overview-actions .btn { background: var(--trip-control-bg); border-color: transparent; color: var(--text); }
+.trip-overview-actions .btn.danger { color: var(--fail); }
+.trip-overview-actions .btn:hover { background: var(--trip-control-hover); border-color: transparent; }
+.trip-overview-actions .btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.trip-overview > [role="alert"] { grid-column: 1 / -1; }
+.trip-overview > [role="alert"]:empty { display: none; }
+@media (max-width: 560px) {
+  .trip-overview { grid-template-columns: minmax(0, 1fr); }
+  .trip-overview-actions { grid-column: 1; grid-row: 1; }
+  .trip-overview .summary-box { grid-row: 2; }
+}
 
 /* ---------- 영수증 행 ---------- */
 
@@ -426,6 +475,9 @@ code {
 
 .field-label { font-size: 0.84rem; font-weight: 600; color: var(--text-dim); }
 .field-hint { font-size: 0.78rem; color: var(--text-dim); }
+.settings-csv-note { font-size: 0.7rem; line-height: 1.6; }
+.settings-csv-note a { color: var(--accent); text-decoration: underline; text-underline-offset: 2px; }
+.settings-csv-note a:hover { text-decoration-thickness: 2px; }
 
 .input {
   padding: 9px 11px;

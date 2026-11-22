@@ -3,17 +3,18 @@
  *
  * 이 프로젝트에서 가장 중요한 화면이다. OCR 이 100% 정확할 수 없다는 전제 위에서,
  * 교차검증으로 "의심스러운 영수증"을 골라내 사람이 빠르게 고치게 하는 것이 설계 목표다.
- * P5 에서 실제 수정·저장이 연결된다.
+ * 수정·저장 후 품목과 총액을 다시 대조한다.
  */
 import { el, pageHeader, emptyState } from '../dom.ts';
 import { money, dateTime, percent } from '../format.ts';
-import { getReceipt, confirmReceipt } from '../../storage/receipts.ts';
+import { getReceipt, confirmReceipt, deleteReceipt } from '../../storage/receipts.ts';
 import { getTrip } from '../../storage/trips.ts';
 import { imageObjectURL } from '../../storage/images.ts';
 import { navigate } from '../../router.ts';
 import { crossCheck, hasReceiptContent, type Receipt } from '../../types.ts';
 import { prepareExchangeRates } from '../../exchange.ts';
 import { conversionNote } from '../exchange-display.ts';
+import { createDeleteButton } from '../delete-action.ts';
 import { groupLinesByY, lineTolerance, toTextLines } from '../../ocr/lines.ts';
 
 function checkBanner(r: Receipt): HTMLElement {
@@ -43,7 +44,7 @@ function checkBanner(r: Receipt): HTMLElement {
   );
 }
 
-/** 읽은 글자를 위에서 아래, 같은 줄은 왼쪽부터 이어 붙인다 (P5 파서 전까지 사람이 보는 용도) */
+/** 읽은 글자를 위에서 아래, 같은 줄은 왼쪽부터 이어 붙여 원문 대조에 쓴다. */
 function ocrText(lines: NonNullable<Receipt['ocr']>['lines']): string {
   const tl = toTextLines(lines);
   return groupLinesByY(tl, lineTolerance(tl)).map((g) => g.text).join('\n');
@@ -166,6 +167,12 @@ export async function renderReceipt(params: Record<string, string>): Promise<HTM
               });
             } }, '확인 완료로 표시'),
       el('a', { class: 'btn', href: `#/receipts/${receipt.id}/edit` }, '수정'),
+      createDeleteButton({
+        label: '영수증 삭제',
+        message: '이 영수증을 삭제할까요? 연결된 사진도 함께 삭제되며 되돌릴 수 없습니다.',
+        remove: () => deleteReceipt(receipt.id), destination: trip ? `/trips/${trip.id}` : '/',
+        onError: message => { actionError.textContent = message; },
+      }),
     ),
     actionError,
 
