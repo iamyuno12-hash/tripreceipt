@@ -435,6 +435,23 @@ td.num, th.num { text-align: right; white-space: nowrap; }
 .stats-trip-statistics + .stats-trip-statistics { border-top: 1px solid var(--guide-border); }
 .stats-trip-statistics > .stat-head { flex-wrap: wrap; margin-bottom: 12px; }
 .stats-trip-statistics .stats-trip-title { margin: 0; font-size: 1rem; overflow-wrap: anywhere; }
+.monthly-chart { margin: 0; }
+.monthly-chart-caption { margin-bottom: 4px; font-size: 0.75rem; color: var(--text-dim); }
+.monthly-chart-scroll { overflow-x: auto; }
+.monthly-chart-scroll:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.monthly-chart-svg { display: block; width: 100%; min-width: 960px; height: 220px; font-family: inherit; }
+.monthly-chart-grid { stroke: var(--border); stroke-width: 1; }
+.monthly-chart-zero { stroke: var(--text-dim); }
+.monthly-chart-tick, .monthly-chart-month-label { fill: var(--text-dim); font-size: 11px; }
+.monthly-chart-hit { fill: transparent; }
+.monthly-chart-bar { fill: var(--accent); }
+.monthly-chart-month:hover .monthly-chart-bar, .monthly-chart-month:focus .monthly-chart-bar { opacity: 0.75; }
+.monthly-chart-month:focus-visible .monthly-chart-hit { stroke: var(--accent); stroke-width: 1; }
+.monthly-chart-zero-mark { stroke: var(--text-dim); stroke-width: 2; }
+.monthly-chart-tooltip { pointer-events: none; }
+.monthly-chart-tooltip rect { fill: var(--surface); stroke: var(--guide-border); stroke-width: 1; }
+.monthly-chart-tooltip-month { fill: var(--text-dim); font-size: 11px; }
+.monthly-chart-tooltip-amount { fill: var(--text); font-size: 12px; font-weight: 700; }
 @media (max-width: 520px) {
   .stats-panel { padding: 16px 12px; }
 }

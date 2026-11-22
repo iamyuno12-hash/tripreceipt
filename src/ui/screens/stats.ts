@@ -13,26 +13,7 @@ import { expensesByMonth, summarizeExpenses } from '../../currency.ts';
 import { prepareExchangeRates } from '../../exchange.ts';
 import { expenseText } from '../exchange-display.ts';
 import { CURRENCIES, selectField } from '../form.ts';
-
-/** 숫자를 비교하기 쉬운 막대로 표시한다. */
-function amountBars(
-  data: ReadonlyArray<{ label: string; amount: number; title?: string }>,
-  currency: string,
-): HTMLElement {
-  if (data.length === 0) return emptyState('표시할 지출 내역이 없습니다.');
-  const max = Math.max(1, ...data.map(row => Math.max(0, row.amount)));
-  return el('div', { class: 'bars' },
-    ...data.map(({ label, amount, title }) =>
-      el('div', { class: 'bar-row' },
-        el('span', { class: 'bar-label', text: label, title: title ?? label }),
-        el('div', { class: 'bar-track' },
-          el('div', { class: 'bar-fill', style: `width:${Math.max(0, amount) / max * 100}%` }),
-        ),
-        el('span', { class: 'bar-value', text: money(amount, currency) }),
-      ),
-    ),
-  );
-}
+import { renderMonthlyChart } from '../monthly-chart.ts';
 
 /** 모든 여행의 검수 완료된 영수증을 모아, 최근 1년 월별 지출을 통화별로 표시한다. */
 function renderOverallTrend(trips: readonly Trip[], receipts: readonly Receipt[]): HTMLElement {
@@ -59,14 +40,7 @@ function renderOverallTrend(trips: readonly Trip[], receipts: readonly Receipt[]
             const points = expensesByMonth(trips, eligible, currency);
             return el('div', { style: 'margin-top:20px' },
               el('h3', { text: `${currency} 기준`, style: 'font-size:0.94rem;margin:0 0 10px' }),
-              amountBars(
-                points.map(({ key, amount }) => ({
-                  label: key.replace('-', '.'),
-                  title: key,
-                  amount,
-                })),
-                currency,
-              ),
+              renderMonthlyChart(points, currency),
             );
           }),
         ),
