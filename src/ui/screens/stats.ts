@@ -43,8 +43,12 @@ function renderOverallTrend(trips: readonly Trip[], receipts: readonly Receipt[]
   const currencies = [...new Set(trips.filter(trip => eligible.some(r => r.tripId === trip.id)).map(trip => trip.currency))].sort();
   const pending = trips.reduce((n, trip) => n + summarizeExpenses(eligible.filter(r => r.tripId === trip.id), trip.currency).pending, 0);
 
-  return el('section', { class: 'stat-section' },
-    el('h2', { class: 'section-title', text: '전체 월별 지출 추이 (1년 전 ~ 이번 달)' }),
+  return el('section', { class: 'stat-section stats-panel', 'aria-labelledby': 'stats-trend-title' },
+    el('header', { class: 'stats-panel-header' },
+      el('h2', { class: 'section-title stats-panel-title', id: 'stats-trend-title', tabindex: -1,
+        text: '월별 지출 추이' }),
+      el('p', { class: 'stats-panel-purpose', text: '1년 전부터 이번 달까지, 월별 지출의 흐름을 봅니다.' }),
+    ),
     el('p', { class: 'stat-note',
       text: '검수 완료 영수증을 각 여행의 기준 통화로 환산해 합산합니다. 기준 통화가 다른 여행은 구분합니다.' }),
     pending > 0 ? el('p', { class: 'stat-note', text: `환산 대기 ${pending}장이 빠진 부분 집계입니다.` }) : null,
@@ -75,8 +79,8 @@ function renderComparison(
 ): HTMLElement {
   // 표시 필터를 바꿔도 기존 통화별 비교 영역과 막대 값은 유지한다.
   if (registeredTripCount < 2) {
-    return el('section', { class: 'stat-section' },
-      el('h2', { class: 'section-title', text: '여행 간 지출 비교' }),
+    return el('section', { class: 'stat-section stats-panel', 'aria-labelledby': 'stats-comparison-title' },
+      comparisonHeader(),
       emptyState('여행이 2개 이상 등록되면 지출을 비교할 수 있습니다.'),
     );
   }
@@ -91,8 +95,8 @@ function renderComparison(
     groups.set(trip.currency, rows);
   }
 
-  return el('section', { class: 'stat-section' },
-    el('h2', { class: 'section-title', text: '여행 간 지출 비교' }),
+  return el('section', { class: 'stat-section stats-panel', 'aria-labelledby': 'stats-comparison-title' },
+    comparisonHeader(),
     el('p', { class: 'stat-note',
       text: '검수 완료된 영수증을 여행 기준 통화로 환산한 금액입니다. 기준 통화가 다른 여행끼리는 구분합니다.' }),
     ...[...groups.entries()].map(([currency, rows]) => {
@@ -114,6 +118,14 @@ function renderComparison(
         ),
       );
     }),
+  );
+}
+
+function comparisonHeader(): HTMLElement {
+  return el('header', { class: 'stats-panel-header' },
+    el('h2', { class: 'section-title stats-panel-title', id: 'stats-comparison-title', tabindex: -1,
+      text: '여행 간 지출 비교' }),
+    el('p', { class: 'stats-panel-purpose', text: '여행별 지출 규모를 나란히 비교합니다.' }),
   );
 }
 
@@ -139,9 +151,9 @@ function renderTripStatistics(trip: Trip, receipts: readonly Receipt[]): HTMLEle
     });
 
   const excluded = receipts.filter(r => !isCountable(r)).length;
-  return el('section', { class: 'stat-section' },
+  return el('section', { class: 'stat-section stats-trip-statistics', 'aria-label': trip.name },
     el('div', { class: 'stat-head' },
-      el('h2', { class: 'section-title', text: trip.name }),
+      el('h3', { class: 'section-title stats-trip-title', text: trip.name }),
       el('span', {
         class: 'stat-total',
         title: '여행 기준 통화로 환산한 영수증 총액 (검수 전 금액 포함)',
@@ -166,6 +178,19 @@ function renderTripStatistics(trip: Trip, receipts: readonly Receipt[]): HTMLEle
           buildExpenseCsv([trip], receipts), `tripreceipt-${trip.id}.csv`,
         ),
       }, '이 여행 CSV 내보내기'),
+    ),
+  );
+}
+
+function renderTripCategories(trips: readonly Trip[], byTrip: ReadonlyMap<string, Receipt[]>): HTMLElement {
+  return el('section', { class: 'stat-section stats-panel', 'aria-labelledby': 'stats-categories-title' },
+    el('header', { class: 'stats-panel-header' },
+      el('h2', { class: 'section-title stats-panel-title', id: 'stats-categories-title', tabindex: -1,
+        text: '여행별 지출 구성' }),
+      el('p', { class: 'stats-panel-purpose', text: '각 여행 안에서 분류별로 얼마를 썼는지 살펴봅니다.' }),
+    ),
+    el('div', { class: 'stats-trip-list' },
+      ...trips.map(trip => renderTripStatistics(trip, byTrip.get(trip.id) ?? [])),
     ),
   );
 }
@@ -215,23 +240,49 @@ export async function renderStats(): Promise<HTMLElement> {
     results.replaceChildren(
       renderOverallTrend(visibleTrips, visibleReceipts),
       renderComparison(visibleTrips, byTrip, trips.length),
-      ...visibleTrips.map(trip => renderTripStatistics(trip, byTrip.get(trip.id) ?? [])),
+      renderTripCategories(visibleTrips, byTrip),
     );
   }
   select.addEventListener('change', drawStatistics);
   drawStatistics();
 
-  return el('div', {},
-    pageHeader('통계', '전체 월별 지출 추이와 여행별·카테고리별 지출을 확인합니다.'),
-    filter,
-    el('div', { class: 'btn-row' },
+  const page = el('div', { class: 'stats-page' });
+  const navigation = el('nav', { class: 'stats-jump', 'aria-label': '통계 영역 바로가기' },
+    el('span', { class: 'stats-jump-label', text: '바로가기' }),
+    ...[
+      ['stats-trend-title', '월별 추이'],
+      ['stats-comparison-title', '여행 비교'],
+      ['stats-categories-title', '여행별 지출 구성'],
+    ].map(([id, label]) => el('button', {
+      class: 'btn tiny', type: 'button', 'aria-controls': id, 'aria-label': `${label} 영역으로 이동`,
+      onclick: () => {
+        // 해시 라우터의 주소와 통화 선택은 유지한 채 해당 영역으로 이동한다.
+        const heading = page.querySelector<HTMLElement>(`#${id}`);
+        if (!heading) return;
+        const section = heading.closest('section');
+        if (!section) return;
+        // 좁은 화면에서 바로가기 행이 줄바꿈되어도 제목을 가리지 않는다.
+        section.style.scrollMarginTop = `${navigation.getBoundingClientRect().height + 16}px`;
+        section.scrollIntoView({ block: 'start' });
+        heading.focus({ preventScroll: true });
+      },
+    }, label)),
+  );
+
+  page.append(
+    pageHeader('통계', '월별 지출의 흐름과 여행별·카테고리별 지출을 확인합니다.'),
+    el('div', { class: 'stats-export' },
       el('button', {
         class: 'btn primary', type: 'button',
         onclick: () => downloadCsv(buildExpenseCsv(trips, all), 'tripreceipt-all.csv'),
       }, '전체 CSV 내보내기'),
+      el('p', { class: 'stats-export-note',
+        text: '전체 CSV는 표시 통화와 관계없이 모든 여행을 포함합니다. 사진은 포함되지 않습니다.' }),
     ),
-    el('p', { class: 'stat-note', text: '전체 CSV는 표시 통화와 관계없이 모든 여행을 포함합니다.' }),
+    filter,
     selectionStatus,
+    navigation,
     results,
   );
+  return page;
 }

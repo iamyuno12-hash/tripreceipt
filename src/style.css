@@ -400,6 +400,45 @@ td.num, th.num { text-align: right; white-space: nowrap; }
 .stat-head .section-title { margin: 20px 0 10px; }
 .stat-total { font-weight: 700; color: var(--accent); }
 
+.stats-panel {
+  margin: 24px 0 32px;
+  padding: 20px;
+  background: var(--surface);
+  border: 1px solid var(--guide-border);
+  border-top: 3px solid var(--trip-summary-border);
+  border-radius: var(--radius);
+  scroll-margin-top: 24px;
+}
+.stats-panel-header { margin-bottom: 16px; padding-bottom: 12px; border-bottom: 1px solid var(--border); }
+.stats-panel-title { margin: 0; font-size: 1.08rem; }
+.stats-panel-title:focus-visible { outline: 2px solid var(--accent); outline-offset: 4px; }
+.stats-panel-purpose { margin: 6px 0 0; font-size: 0.82rem; color: var(--text-dim); }
+.stats-jump {
+  position: sticky;
+  top: 0;
+  z-index: 5;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-top: 16px;
+  padding: 12px 0;
+  background: var(--bg);
+  border-bottom: 1px solid var(--guide-border);
+}
+.stats-jump-label { margin-right: 4px; font-size: 0.78rem; color: var(--text-dim); }
+.stats-export { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; margin-bottom: 20px; }
+.stats-export-note { flex: 1 1 240px; margin: 0; font-size: 0.75rem; color: var(--text-dim); }
+.stats-trip-statistics { margin: 0; padding: 24px 0; }
+.stats-trip-statistics:first-child { padding-top: 0; }
+.stats-trip-statistics:last-child { padding-bottom: 0; }
+.stats-trip-statistics + .stats-trip-statistics { border-top: 1px solid var(--guide-border); }
+.stats-trip-statistics > .stat-head { flex-wrap: wrap; margin-bottom: 12px; }
+.stats-trip-statistics .stats-trip-title { margin: 0; font-size: 1rem; overflow-wrap: anywhere; }
+@media (max-width: 520px) {
+  .stats-panel { padding: 16px 12px; }
+}
+
 .bars { display: grid; gap: 8px; }
 .bar-row { display: grid; grid-template-columns: 52px 1fr auto; gap: 10px; align-items: center; }
 .bar-label { font-size: 0.84rem; color: var(--text-dim); }
