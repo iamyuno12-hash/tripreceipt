@@ -54,7 +54,7 @@ function statisticsGuide(): HTMLElement {
 function renderOverallTrend(trips: readonly Trip[], receipts: readonly Receipt[]): HTMLElement {
   const tripIds = new Set(trips.map(trip => trip.id));
   const eligible = receipts.filter(receipt =>
-    tripIds.has(receipt.tripId) && isCountable(receipt),
+    receipt.tripId !== null && tripIds.has(receipt.tripId) && isCountable(receipt),
   );
   const currencies = [...new Set(trips.filter(trip => eligible.some(r => r.tripId === trip.id)).map(trip => trip.currency))].sort();
   const today = new Date();
@@ -164,6 +164,16 @@ function renderTripCategories(trips: readonly Trip[], byTrip: ReadonlyMap<string
   );
 }
 
+function exportAction(trips: readonly Trip[], receipts: readonly Receipt[]): HTMLElement {
+  return el('div', { class: 'stats-export' },
+    el('button', { class: 'btn primary', type: 'button',
+      onclick: () => downloadCsv(buildExpenseCsv(trips, receipts), 'tripreceipt-all.csv'),
+    }, '전체 CSV 내보내기'),
+    el('p', { class: 'stats-export-note',
+      text: '전체 CSV는 통화·기간·검색 조건과 관계없이 모든 여행·미지정 영수증을 포함합니다. 사진은 포함되지 않습니다.' }),
+  );
+}
+
 export async function renderStats(): Promise<HTMLElement> {
   const [trips, saved] = await Promise.all([listTrips(), listAllReceipts()]);
   const all = await prepareExchangeRates(trips, saved);
@@ -171,12 +181,15 @@ export async function renderStats(): Promise<HTMLElement> {
   if (trips.length === 0) {
     return el('div', { class: 'stats-page' },
       pageHeader('통계'),
-      emptyState('집계할 여행이 없습니다.', '여행을 만들고 영수증을 추가하면 분류별 지출이 보입니다.'),
+      exportAction(trips, all),
+      emptyState('집계할 여행이 없습니다.', '여행 미지정 영수증은 여행에 지정한 뒤 통계에 포함됩니다.'),
+      el('a', { class: 'btn', href: '#/' }, '여행으로 이동'),
     );
   }
 
   const byTrip = new Map<string, Receipt[]>();
   for (const r of all) {
+    if (r.tripId === null) continue;
     const list = byTrip.get(r.tripId);
     if (list) list.push(r);
     else byTrip.set(r.tripId, [r]);
@@ -205,7 +218,7 @@ export async function renderStats(): Promise<HTMLElement> {
     const currency = select.value;
     const visibleTrips = currency ? trips.filter(trip => trip.currency === currency) : trips;
     const visibleIds = new Set(visibleTrips.map(trip => trip.id));
-    const visibleReceipts = all.filter(receipt => visibleIds.has(receipt.tripId));
+    const visibleReceipts = all.filter(receipt => receipt.tripId !== null && visibleIds.has(receipt.tripId));
     selectionStatus.textContent = `${currency ? `${currency} 기준` : '전체 통화'} · 여행 ${visibleTrips.length}개`;
     results.replaceChildren(
       renderOverallTrend(visibleTrips, visibleReceipts),
@@ -241,14 +254,11 @@ export async function renderStats(): Promise<HTMLElement> {
 
   page.append(
     pageHeader('통계', '월별 지출의 흐름과 여행별·카테고리별 지출을 확인합니다.'),
-    el('div', { class: 'stats-export' },
-      el('button', {
-        class: 'btn primary', type: 'button',
-        onclick: () => downloadCsv(buildExpenseCsv(trips, all), 'tripreceipt-all.csv'),
-      }, '전체 CSV 내보내기'),
-      el('p', { class: 'stats-export-note',
-        text: '전체 CSV는 통화·기간·검색 조건과 관계없이 모든 여행·영수증을 포함합니다. 사진은 포함되지 않습니다.' }),
-    ),
+    exportAction(trips, all),
+    ...(all.some(receipt => receipt.tripId === null)
+      ? [el('p', { class: 'stat-note' },
+          el('a', { class: 'inline-link', href: '#/unassigned' }, `여행 미지정 ${all.filter(receipt => receipt.tripId === null).length}장`),
+          '은 여행에 지정하기 전까지 통계에서 제외됩니다.')] : []),
     filter,
     selectionStatus,
     statisticsGuide(),

@@ -53,7 +53,7 @@ export function buildExpenseCsv(
   receipts: readonly Receipt[],
 ): string {
   const rows: CsvValue[][] = [[...HEADERS]];
-  const receiptsByTrip = new Map<string, Receipt[]>();
+  const receiptsByTrip = new Map<string | null, Receipt[]>();
 
   for (const receipt of receipts) {
     const grouped = receiptsByTrip.get(receipt.tripId) ?? [];
@@ -61,19 +61,20 @@ export function buildExpenseCsv(
     receiptsByTrip.set(receipt.tripId, grouped);
   }
 
-  for (const trip of trips) {
-    const tripReceipts = [...(receiptsByTrip.get(trip.id) ?? [])]
+  // 미지정은 실제 여행으로 만들지 않는다. CSV에만 별도 이름으로 원본을 보존한다.
+  for (const trip of [...trips, null]) {
+    const tripReceipts = [...(receiptsByTrip.get(trip?.id ?? null) ?? [])]
       .sort((a, b) => a.purchasedAt.localeCompare(b.purchasedAt));
 
     for (const receipt of tripReceipts) {
-      const converted = receipt.status === 'pending' ? null : convertedTotal(receipt, trip.currency);
-      const snapshot = receiptRate(receipt, trip.currency);
-      const rate = receipt.currency === trip.currency ? 1 : snapshot?.rate;
-      const conversionState = receipt.status === 'pending' ? '내용 대기' : converted === null ? '환산 대기'
+      const converted = !trip || receipt.status === 'pending' ? null : convertedTotal(receipt, trip.currency);
+      const snapshot = trip ? receiptRate(receipt, trip.currency) : undefined;
+      const rate = trip && receipt.currency === trip.currency ? 1 : snapshot?.rate;
+      const conversionState = !trip ? '여행 미지정' : receipt.status === 'pending' ? '내용 대기' : converted === null ? '환산 대기'
         : receipt.currency === trip.currency ? '같은 통화' : '환산 완료';
       const prefix: CsvValue[] = [
-        trip.name,
-        trip.id,
+        trip?.name ?? '여행 미지정',
+        trip?.id ?? '',
         receipt.purchasedAt,
         receipt.merchant,
         receipt.id,
@@ -82,13 +83,13 @@ export function buildExpenseCsv(
         receipt.currency,
       ];
       const suffix = (first: boolean, itemAmount?: number): CsvValue[] => [
-        first ? receipt.total : '', first ? receipt.tax : '', trip.currency, rate,
+        first ? receipt.total : '', first ? receipt.tax : '', trip?.currency ?? '', rate,
         snapshot?.date ?? (rate === 1 ? paymentDate(receipt.purchasedAt) : ''),
         snapshot?.requestedDate ?? (rate === 1 ? paymentDate(receipt.purchasedAt) : ''),
         snapshot?.source ?? (rate === 1 ? '동일 통화' : ''), conversionState,
-        itemAmount !== undefined && rate !== undefined && converted !== null ? convertAmount(itemAmount, rate, trip.currency) : '',
+        itemAmount !== undefined && rate !== undefined && converted !== null && trip ? convertAmount(itemAmount, rate, trip.currency) : '',
         first ? converted : '',
-        first && receipt.tax !== null && rate !== undefined && converted !== null ? convertAmount(receipt.tax, rate, trip.currency) : '',
+        first && receipt.tax !== null && rate !== undefined && converted !== null && trip ? convertAmount(receipt.tax, rate, trip.currency) : '',
       ];
 
       if (receipt.items.length === 0) {

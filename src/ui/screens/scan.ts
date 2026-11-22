@@ -11,15 +11,17 @@
 import { el, pageHeader, emptyState } from '../dom.ts';
 import { navigate } from '../../router.ts';
 import { listTrips } from '../../storage/trips.ts';
-import { saveImage } from '../../storage/images.ts';
+import { saveImage, deleteImage } from '../../storage/images.ts';
 import { createReceipt } from '../../storage/receipts.ts';
 import { ensurePersistOnce } from '../../storage/persist.ts';
 import { canvasToBlob } from '../../image/preprocess.ts';
 import { analyzeReceipt, type AnalyzeResult } from '../../ocr/pipeline.ts';
 import { meanScore } from '../../image/geometry.ts';
 import { totalModelMB } from '../../ocr/models.ts';
-import { OCR_LANGUAGE_LABELS, tripOcrLanguage, type Trip } from '../../types.ts';
+import { OCR_LANGUAGES, OCR_LANGUAGE_LABELS, suggestOcrLanguage, tripOcrLanguage, type Trip, type OcrLanguage } from '../../types.ts';
 import { registrationGuide } from '../registration-guide.ts';
+import { CURRENCIES, selectField } from '../form.ts';
+import { travelPath } from '../travel-state.ts';
 
 function note(text: string, kind: 'info' | 'ok' | 'fail' = 'info'): HTMLElement {
   return el('p', { class: `ocr-status ${kind}`, text });
@@ -27,30 +29,56 @@ function note(text: string, kind: 'info' | 'ok' | 'fail' = 'info'): HTMLElement 
 
 const HINT = '영수증 사진 파일을 선택하세요';
 
-export async function renderScan(): Promise<HTMLElement> {
+export async function renderScan(params: Record<string, string> = {}): Promise<HTMLElement> {
   const trips = await listTrips();
 
-  if (trips.length === 0) {
+  if (params['tripId'] && !trips.some(trip => trip.id === params['tripId'])) {
     return el('div', {},
       pageHeader('영수증 등록'),
       registrationGuide(),
-      emptyState('먼저 여행을 만들어야 합니다.', '영수증은 여행에 속해 저장됩니다.'),
-      el('a', { class: 'btn primary block', href: '#/trips/new' }, '여행 만들기'),
+      emptyState('여행을 찾을 수 없습니다.', '여행 화면에서 다시 등록해 주세요.'),
+      el('a', { class: 'btn primary block', href: '#/' }, '여행으로 이동'),
     );
   }
 
   const tripSelect = el('select', { class: 'input', id: 'scan-trip' });
+  tripSelect.appendChild(el('option', { value: '', text: '여행 미지정' }));
   for (const t of trips) {
     tripSelect.appendChild(el('option', { value: t.id, text: `${t.name} (${t.destination})` }));
   }
+  tripSelect.value = params['tripId'] ?? trips[0]?.id ?? '';
   const currentTrip = (): Trip | undefined => trips.find((t) => t.id === tripSelect.value);
+  const currencyField = selectField('결제 통화', 'scanCurrency', CURRENCIES,
+    CURRENCIES.some(([code]) => code === params['currency']) ? params['currency'] : currentTrip()?.currency ?? 'KRW');
+  const currencyInput = currencyField.querySelector<HTMLSelectElement>('select')!;
+  const languageField = selectField('OCR 인식 언어', 'scanLanguage', OCR_LANGUAGES.map(lang => [lang, OCR_LANGUAGE_LABELS[lang]] as const),
+    OCR_LANGUAGES.includes(params['lang'] as OcrLanguage) ? params['lang'] : 'korean');
+  const languageInput = languageField.querySelector<HTMLSelectElement>('select')!;
+  let languageTouched = OCR_LANGUAGES.includes(params['lang'] as OcrLanguage);
+  const currentLanguage = (): OcrLanguage => currentTrip() ? tripOcrLanguage(currentTrip()) : languageInput.value as OcrLanguage;
+  const backLink = el('a', { class: 'back-link', href: '#/' }, '← 여행');
   const langHint = el('p', { class: 'field-hint' });
   const showLang = (): void => {
-    const lang = tripOcrLanguage(currentTrip());
-    langHint.textContent = `인식 언어: ${OCR_LANGUAGE_LABELS[lang]} — 여행 설정에서 바꿀 수 있습니다. ` +
+    const lang = currentLanguage();
+    currencyField.hidden = !!currentTrip(); languageField.hidden = !!currentTrip();
+    backLink.href = `#${travelPath(currentTrip()?.id ?? null)}`;
+    langHint.textContent = `인식 언어: ${OCR_LANGUAGE_LABELS[lang]}${currentTrip() ? ' — 여행 설정에서 바꿀 수 있습니다.' : ''} ` +
       `첫 인식 때 모델 약 ${totalModelMB(lang).toFixed(0)}MB 를 내려받습니다.`;
   };
-  tripSelect.addEventListener('change', showLang);
+  tripSelect.addEventListener('change', () => {
+    if (currentTrip()) currencyInput.value = currentTrip()!.currency;
+    if (analyzed && analyzed.snapshot.lang !== currentLanguage()) reset();
+    showLang();
+  });
+  languageInput.addEventListener('change', () => {
+    languageTouched = true;
+    if (analyzed && analyzed.snapshot.lang !== currentLanguage()) reset();
+    showLang();
+  });
+  currencyInput.addEventListener('change', () => {
+    if (!analyzed && !languageTouched) languageInput.value = suggestOcrLanguage(currencyInput.value);
+    showLang();
+  });
   showLang();
 
   const stage = el('div', { class: 'preview-box' }, el('span', { class: 'preview-hint', text: HINT }));
@@ -60,6 +88,7 @@ export async function renderScan(): Promise<HTMLElement> {
   const actionHintSlot = el('div', {});
   let analyzed: AnalyzeResult | null = null;
   let busy = false;
+  let saving = false;
 
   function reset(): void {
     analyzed = null;
@@ -70,11 +99,12 @@ export async function renderScan(): Promise<HTMLElement> {
   }
 
   async function run(file: File): Promise<void> {
-    if (busy) return;
+    if (busy || saving) return;
     busy = true;
     drawActions('busy');
     linesSlot.replaceChildren();
-    const lang = tripOcrLanguage(currentTrip());
+    const lang = currentLanguage();
+    analyzed = null;
     try {
       const bitmap = await createImageBitmap(file);
       try {
@@ -115,20 +145,23 @@ export async function renderScan(): Promise<HTMLElement> {
   }
 
   async function save(): Promise<void> {
-    if (!analyzed) return;
+    if (!analyzed || saving) return;
+    saving = true;
+    let unsavedImage: string | null = null;
     drawActions('busy');
     statusSlot.replaceChildren(note('저장 중…'));
     try {
       // OCR 좌표가 이 이미지 기준이므로, 원본이 아니라 인식에 쓴 이미지를 저장한다.
       const blob = await canvasToBlob(analyzed.canvas);
       const imageId = await saveImage(blob);
+      unsavedImage = imageId;
       const trip = currentTrip();
       const receipt = await createReceipt({
-        tripId: tripSelect.value,
+        tripId: tripSelect.value || null,
         imageId,
         merchant: '',
         purchasedAt: new Date().toISOString(),
-        currency: trip?.currency ?? 'KRW',
+        currency: trip?.currency ?? currencyInput.value,
         total: 0,
         tax: null,
         confidence: analyzed.result.lines.length ? meanScore(analyzed.result.lines) : null,
@@ -137,16 +170,19 @@ export async function renderScan(): Promise<HTMLElement> {
         items: [],
         ocr: analyzed.snapshot,
       });
+      unsavedImage = null;
       void ensurePersistOnce();
       navigate(`/receipts/${receipt.id}/edit`);
     } catch (err) {
+      if (unsavedImage) await deleteImage(unsavedImage).catch(() => {});
       console.error(err);
       statusSlot.replaceChildren(note(`저장 실패: ${err instanceof Error ? err.message : String(err)}`, 'fail'));
       drawActions('ready');
-    }
+    } finally { saving = false; }
   }
 
   function drawActions(mode: 'idle' | 'busy' | 'ready'): void {
+    for (const input of [tripSelect, currencyInput, languageInput]) input.disabled = mode === 'busy';
     actionHintSlot.replaceChildren(...(mode === 'ready' ? [el('p', { class: 'field-hint',
       text: '사진과 읽은 글자를 먼저 등록합니다. 다음 수정 화면에서 내용을 확인하고 저장을 눌러 주세요.' })] : []));
     if (mode === 'busy') {
@@ -174,14 +210,15 @@ export async function renderScan(): Promise<HTMLElement> {
     },
   });
 
-  return el('div', {},
-    pageHeader('영수증 등록', '사진은 이 브라우저 안에서만 처리·저장되며 외부로 전송되지 않습니다.'),
+  return el('div', { class: 'scan-page' },
     registrationGuide(),
+    backLink,
+    pageHeader('영수증 등록', '사진은 이 브라우저 안에서만 처리·저장되며 외부로 전송되지 않습니다.'),
     el('div', { class: 'field' },
       el('label', { class: 'field-label', for: 'scan-trip', text: '여행' }),
       tripSelect,
-      langHint,
     ),
+    currencyField, languageField, langHint,
     stage,
     actionSlot,
     actionHintSlot,

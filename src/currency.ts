@@ -94,7 +94,7 @@ export function expensesByMonth(trips: readonly Trip[], receipts: readonly Recei
     months.set(`${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`, []);
   }
   for (const receipt of receipts) {
-    if (!eligibleTrips.has(receipt.tripId) || !isCountable(receipt)) continue;
+    if (receipt.tripId === null || !eligibleTrips.has(receipt.tripId) || !isCountable(receipt)) continue;
     const values = months.get(paymentDate(receipt.purchasedAt).slice(0, 7));
     const amount = convertedTotal(receipt, currency);
     if (values && amount !== null) values.push(amount);

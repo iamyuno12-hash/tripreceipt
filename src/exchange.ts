@@ -49,7 +49,7 @@ export async function saveReceiptRate(id: string, rate: ExchangeRate): Promise<R
   const db = await getDB();
   const tx = db.transaction(['receipts', 'trips'], 'readwrite');
   const receipt = await tx.objectStore('receipts').get(id);
-  const trip = receipt ? await tx.objectStore('trips').get(receipt.tripId) : undefined;
+  const trip = receipt?.tripId ? await tx.objectStore('trips').get(receipt.tripId) : undefined;
   if (!receipt || !trip || !validRate(rate, receipt.currency, trip.currency, paymentDate(receipt.purchasedAt))) {
     await tx.done;
     return receipt;
@@ -66,7 +66,7 @@ export async function saveReceiptRate(id: string, rate: ExchangeRate): Promise<R
 export async function prepareExchangeRates(trips: readonly Trip[], receipts: readonly Receipt[]): Promise<Receipt[]> {
   const byId = new Map(trips.map(trip => [trip.id, trip]));
   return Promise.all(receipts.map(async receipt => {
-    const trip = byId.get(receipt.tripId);
+    const trip = receipt.tripId ? byId.get(receipt.tripId) : undefined;
     if (!trip || !hasReceiptContent(receipt) || receipt.currency === trip.currency || receiptRate(receipt, trip.currency)) return receipt;
     try {
       const rate = await lookupExchangeRate(receipt.currency, trip.currency, paymentDate(receipt.purchasedAt));

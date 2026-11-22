@@ -34,9 +34,11 @@ function contentKey(r: Receipt): string {
   ]);
 }
 
-export async function listReceipts(tripId: string): Promise<Receipt[]> {
+export async function listReceipts(tripId: string | null): Promise<Receipt[]> {
   const db = await getDB();
-  const rows = await db.getAllFromIndex('receipts', 'by-trip', tripId);
+  // null은 IndexedDB 인덱스 키가 아니므로 미지정 보관함은 전체에서 고른다.
+  const rows = tripId === null ? (await db.getAll('receipts')).filter(r => r.tripId === null)
+    : await db.getAllFromIndex('receipts', 'by-trip', tripId);
   return rows.sort((a, b) => a.purchasedAt.localeCompare(b.purchasedAt));
 }
 
@@ -62,7 +64,13 @@ export async function createReceipt(draft: ReceiptDraft): Promise<Receipt> {
   const receipt: Receipt = { ...base, status: resolveStatus(base) };
 
   const db = await getDB();
-  await db.add('receipts', receipt);
+  const tx = db.transaction(['trips', 'receipts'], 'readwrite');
+  if (receipt.tripId !== null && !await tx.objectStore('trips').get(receipt.tripId)) {
+    await tx.done;
+    throw new Error('여행을 찾을 수 없습니다. 여행을 다시 선택하세요.');
+  }
+  await tx.objectStore('receipts').add(receipt);
+  await tx.done;
   return receipt;
 }
 
@@ -71,8 +79,8 @@ export async function updateReceipt(
   patch: Partial<Omit<ReceiptDraft, 'items'>> & { items?: readonly ItemDraft[] },
 ): Promise<Receipt> {
   const db = await getDB();
-  const tx = db.transaction('receipts', 'readwrite');
-  const existing = await tx.store.get(id);
+  const tx = db.transaction(['trips', 'receipts'], 'readwrite');
+  const existing = await tx.objectStore('receipts').get(id);
   if (!existing) throw new Error(`영수증을 찾을 수 없습니다: ${id}`);
 
   const merged: Receipt = {
@@ -80,13 +88,17 @@ export async function updateReceipt(
     ...patch,
     items: patch.items ? materialize(id, patch.items) : existing.items,
   };
+  if (merged.tripId !== null && !await tx.objectStore('trips').get(merged.tripId)) {
+    await tx.done;
+    throw new Error('여행을 찾을 수 없습니다. 여행을 다시 선택하세요.');
+  }
   const changed = contentKey(existing) !== contentKey(merged);
   const candidate = existing.status === 'confirmed' && changed
     ? { ...merged, status: 'parsed' as const }
     : merged;
   const updated: Receipt = { ...candidate, status: resolveStatus(candidate) };
 
-  await tx.store.put(updated);
+  await tx.objectStore('receipts').put(updated);
   await tx.done;
   return updated;
 }

@@ -1,88 +1,99 @@
-/** 여행 목록. 앱의 첫 화면이다. */
-import { el, pageHeader } from '../dom.ts';
+/** 여행과 영수증 등록·관리를 모은 첫 화면. */
+import { el, pageHeader, emptyState } from '../dom.ts';
 import { dateRange } from '../format.ts';
-import { listTrips } from '../../storage/trips.ts';
+import { listTrips, deleteTrip } from '../../storage/trips.ts';
 import { listAllReceipts } from '../../storage/receipts.ts';
 import { isSampleLoaded } from '../../storage/meta.ts';
 import { loadSample } from '../../storage/seed.ts';
-import { type Receipt, type Trip } from '../../types.ts';
+import type { Trip } from '../../types.ts';
 import { summarizeExpenses } from '../../currency.ts';
 import { prepareExchangeRates } from '../../exchange.ts';
 import { expenseText } from '../exchange-display.ts';
 import { registrationGuide } from '../registration-guide.ts';
+import { createDeleteButton } from '../delete-action.ts';
+import { receiptRow } from '../receipt-list.ts';
+import { createRegistrationDialog } from '../registration-dialog.ts';
+import { openTravelGroups, rememberTravelPosition, travelPath } from '../travel-state.ts';
 
-/** 샘플이 들어 있을 때 화면 맨 위에 띄우는 안내. 실제 인식 결과와 헷갈리지 않게 한다. */
 export function sampleBanner(): HTMLElement {
-  return el('div', { class: 'sample-banner' },
-    el('strong', { text: '샘플 데이터' }),
-    el('span', { text: ' 실제 인식 결과가 아니라 화면 확인용으로 넣은 예시입니다. 설정에서 지울 수 있습니다.' }),
-  );
-}
-
-function tripCard(trip: Trip, receipts: Receipt[]): HTMLElement {
-  const needsReview = receipts.filter((r) => r.status === 'needs_review').length;
-  const pending = receipts.filter((r) => r.status === 'pending').length;
-  const summary = summarizeExpenses(receipts, trip.currency);
-
-  return el('a', { class: 'card trip-card', href: `#/trips/${trip.id}` },
-    el('div', { class: 'trip-head' },
-      el('h2', { class: 'trip-name', text: trip.name }),
-      el('span', { class: 'trip-amount', text: expenseText(summary, trip.currency) }),
-    ),
-    el('p', { class: 'trip-meta',
-      text: `${trip.destination} · ${dateRange(trip.startDate, trip.endDate)}` }),
-    el('div', { class: 'badges' },
-      el('span', { class: 'badge', text: `영수증 ${receipts.length}장` }),
-      needsReview > 0 ? el('span', { class: 'badge warn', text: `검수 필요 ${needsReview}장` }) : null,
-      pending > 0 ? el('span', { class: 'badge', text: `인식 대기 ${pending}장` }) : null,
-      summary.pending > 0 ? el('span', { class: 'badge warn', text: `환산 대기 ${summary.pending}장` }) : null,
-    ),
-  );
+  return el('div', { class: 'sample-banner' }, el('strong', { text: '샘플 데이터' }),
+    el('span', { text: ' 실제 인식 결과가 아니라 화면 확인용으로 넣은 예시입니다. 설정에서 지울 수 있습니다.' }));
 }
 
 export async function renderHome(): Promise<HTMLElement> {
-  const [trips, savedReceipts, sample] = await Promise.all([
-    listTrips(),
-    listAllReceipts(),
-    isSampleLoaded(),
-  ]);
-  const allReceipts = await prepareExchangeRates(trips, savedReceipts);
+  const [trips, saved, sample] = await Promise.all([listTrips(), listAllReceipts(), isSampleLoaded()]);
+  const receipts = await prepareExchangeRates(trips, saved);
+  const page = el('div', { class: 'travel-page', 'data-page-key': 'travel-home', 'data-return-path': '/' });
+  const registration = createRegistrationDialog(trips, () => rememberTravelPosition(page));
 
-  const byTrip = new Map<string, Receipt[]>();
-  for (const r of allReceipts) {
-    const list = byTrip.get(r.tripId);
-    if (list) list.push(r);
-    else byTrip.set(r.tripId, [r]);
-  }
-
-  if (trips.length === 0) {
-    return el('div', {},
-      pageHeader('여행', '여행별로 영수증과 지출을 모아 봅니다.'),
-      registrationGuide(),
-      el('div', { class: 'empty' },
-        el('p', { text: '아직 여행이 없습니다.' }),
-        el('p', { class: 'empty-hint', text: '여행을 만들고 영수증을 추가해 보세요.' }),
-        el('div', { class: 'btn-row center' },
-          el('a', { class: 'btn primary', href: '#/trips/new' }, '여행 만들기'),
-          el('button', { class: 'btn', type: 'button',
-            onclick: (ev: Event) => {
-              const btn = ev.currentTarget as HTMLButtonElement;
-              btn.disabled = true;
-              btn.textContent = '넣는 중…';
-              void loadSample().then(() => globalThis.location.reload());
-            } }, '샘플 데이터 넣기'),
+  function group(trip: Trip | null): HTMLElement {
+    const key = trip?.id ?? 'unassigned';
+    const rows = receipts.filter(receipt => receipt.tripId === (trip?.id ?? null))
+      .sort((a, b) => a.purchasedAt.localeCompare(b.purchasedAt));
+    const summary = trip ? summarizeExpenses(rows, trip.currency) : null;
+    const review = rows.filter(r => r.status === 'needs_review').length;
+    const pending = rows.filter(r => r.status === 'pending').length;
+    const error = el('p', { class: 'field-hint', role: 'alert' });
+    const actions = el('span', { class: 'trip-overview-actions' },
+      trip ? el('a', { class: 'btn tiny', href: `#/trips/${trip.id}/edit`, onclick: () => rememberTravelPosition(page) }, '여행 수정') : null,
+      trip ? createDeleteButton({ label: '여행 삭제', tiny: true,
+        message: `"${trip.name}"을(를) 삭제할까요? 이 여행의 영수증과 사진도 함께 삭제되며 되돌릴 수 없습니다.`,
+        remove: () => deleteTrip(trip.id), destination: '/', onError: message => { error.textContent = message; },
+      }) : null,
+    );
+    const bodyId = `travel-receipts-${key}`;
+    const body = el('div', { class: 'travel-group-body', id: bodyId, hidden: !openTravelGroups.has(key) },
+      el('div', { class: 'btn-row travel-receipt-actions' }, el('button', { class: 'btn', type: 'button',
+        onclick: () => registration.open(trip?.id ?? null) }, '+ 영수증 등록')),
+      !trip ? el('p', { class: 'field-hint', text: '여행에 지정하기 전에는 지출·통계에서 제외되며, 전체 CSV에는 포함됩니다.' }) : null,
+      summary?.pending ? el('p', { class: 'stat-note', text: `환산 대기 ${summary.pending}장은 합계에서 빠져 있습니다. 영수증 수정 화면에서 환율을 입력하거나 조회하세요.` }) : null,
+      rows.length ? el('div', { class: 'card-list' }, ...rows.map(receipt => receiptRow(receipt, trip?.currency ?? null,
+        () => rememberTravelPosition(page, receipt.id)))) : emptyState('아직 영수증이 없습니다.'),
+    );
+    const arrow = el('span', { 'aria-hidden': 'true', text: body.hidden ? '▸' : '▾' });
+    const toggle = el('button', { class: 'badge travel-receipt-toggle', type: 'button',
+      'aria-expanded': String(!body.hidden), 'aria-controls': bodyId }, `영수증 ${rows.length}장 `, arrow);
+    toggle.addEventListener('click', () => {
+      body.hidden = !body.hidden;
+      toggle.setAttribute('aria-expanded', String(!body.hidden));
+      arrow.textContent = body.hidden ? '▸' : '▾';
+      if (body.hidden) openTravelGroups.delete(key); else openTravelGroups.add(key);
+    });
+    return el('article', { class: `travel-group${trip ? '' : ' travel-unassigned'}`, 'data-travel-group': key },
+      el('div', { class: 'trip-overview travel-summary' },
+        el('a', { class: 'travel-detail-link', href: `#${travelPath(trip?.id ?? null)}`,
+          'aria-label': `${trip?.name ?? '여행 미지정'} 상세 보기`, onclick: () => rememberTravelPosition(page) }),
+        el('div', { class: 'travel-group-title' },
+          el('h2', { class: 'trip-name', text: trip?.name ?? '여행 미지정' }),
+          el('p', { class: 'trip-meta', text: trip ? `${trip.destination} · ${dateRange(trip.startDate, trip.endDate)}`
+            : '여행을 지정하기 전까지 보관하는 영수증입니다.' }),
+          el('div', { class: 'badges' }, toggle,
+            review ? el('span', { class: 'badge warn', text: `검수 필요 ${review}장` }) : null,
+            pending ? el('span', { class: 'badge', text: `인식 대기 ${pending}장` }) : null,
+            summary?.pending ? el('span', { class: 'badge warn', text: `환산 대기 ${summary.pending}장` }) : null,
+          ), error,
         ),
-      ),
+        el('div', { class: 'travel-group-side' }, actions,
+          trip && summary ? el('span', { class: 'trip-amount', text: expenseText(summary, trip.currency) }) : null),
+      ), body,
     );
   }
 
-  return el('div', {},
-    sample ? sampleBanner() : null,
-    pageHeader('여행', '여행별로 영수증과 지출을 모아 봅니다.'),
+  page.append(
     registrationGuide(),
-    el('div', { class: 'card-list' },
-      ...trips.map((t) => tripCard(t, byTrip.get(t.id) ?? [])),
-    ),
-    el('a', { class: 'btn primary block', href: '#/trips/new' }, '+ 여행 추가'),
+    ...(sample ? [sampleBanner()] : []),
+    el('div', { class: 'travel-page-heading' }, pageHeader('여행', '여행과 영수증을 등록하고 지출을 관리합니다.'),
+      el('div', { class: 'btn-row' },
+        el('a', { class: 'btn primary', href: '#/trips/new', onclick: () => rememberTravelPosition(page) }, '+ 여행 추가'),
+        el('button', { class: 'btn', type: 'button', onclick: () => registration.open() }, '+ 영수증 등록'),
+      )),
+    el('div', { class: 'travel-groups' }, group(null), ...trips.map(group)),
+    ...(trips.length === 0 ? [emptyState('아직 여행이 없습니다.', '여행을 만들거나, 영수증을 여행 미지정으로 먼저 보관하세요.'),
+      !sample && receipts.length === 0 ? el('button', { class: 'btn', type: 'button', onclick: (event: Event) => {
+        const button = event.currentTarget as HTMLButtonElement; button.disabled = true;
+        void loadSample().then(() => globalThis.location.reload());
+      } }, '샘플 데이터 넣기') : null].filter((node): node is HTMLElement => node !== null) : []),
+    registration.element,
   );
+  return page;
 }

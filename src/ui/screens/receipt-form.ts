@@ -14,12 +14,13 @@ import { createReceiptImage } from '../receipt-image.ts';
 import { createExchangeField } from '../exchange-field.ts';
 import { currencyDigits } from '../../currency.ts';
 import { CATEGORIES, amountTolerance, type Category } from '../../types.ts';
-import { getTrip } from '../../storage/trips.ts';
+import { listTrips } from '../../storage/trips.ts';
 import {
   createReceipt, getReceipt, updateReceipt, type ItemDraft,
 } from '../../storage/receipts.ts';
 import { ensurePersistOnce } from '../../storage/persist.ts';
 import { navigate } from '../../router.ts';
+import { travelPath } from '../travel-state.ts';
 import {
   extractReceiptAmounts, extractReceiptDate, extractReceiptItems,
   extractReceiptMerchant, extractReceiptPurchasedAt, groupReceiptLines,
@@ -116,13 +117,14 @@ export async function renderReceiptForm(params: Record<string, string>): Promise
   const editing = receiptId !== undefined;
 
   const existing = editing ? await getReceipt(receiptId) : undefined;
-  const tripId = existing?.tripId ?? params['tripId'] ?? '';
-  const trip = await getTrip(tripId);
+  const trips = await listTrips();
+  const tripId = existing ? existing.tripId : params['tripId'] || null;
+  const trip = trips.find(t => t.id === tripId);
 
-  if (!trip) {
+  if ((editing && !existing) || (tripId && !trip)) {
     return el('div', {},
       pageHeader('영수증'),
-      el('p', { class: 'empty', text: '여행을 찾을 수 없습니다.' }),
+      el('p', { class: 'empty', text: editing && !existing ? '영수증을 찾을 수 없습니다.' : '여행을 찾을 수 없습니다.' }),
       el('a', { class: 'btn', href: '#/' }, '← 여행 목록'),
     );
   }
@@ -182,7 +184,10 @@ const total = amounts
   ? amounts.total
   : existing?.total ?? 0;
 
-  const currency = existing?.currency ?? trip.currency;
+  const currency = existing?.currency ?? trip?.currency ?? (CURRENCIES.some(([code]) => code === params['currency']) ? params['currency']! : 'KRW');
+  const tripField = selectField('여행', 'receiptTrip', [['', '여행 미지정'], ...trips.map(t => [t.id, t.name] as const)], tripId ?? '');
+  const tripInput = tripField.querySelector<HTMLSelectElement>('select')!;
+  const currentTrip = () => trips.find(t => t.id === tripInput.value);
   const amountHints: string[] = [];
   if (amounts?.totalInferred) {
     amountHints.push('인쇄된 합계에서 할인을 뺀 금액을 채웠어요. 결제금액을 확인하세요.');
@@ -319,6 +324,7 @@ const total = amounts
   currencyInput.addEventListener('change', refreshBalance);
 
   const form = el('form', { class: 'form', novalidate: 'true' },
+    tripField,
     field({ label: '상호', name: 'merchant', required: true,
       value: merchant, placeholder: '예: 이치란 도톤보리점' }),
     el('div', { class: 'field-row' },
@@ -372,13 +378,18 @@ const total = amounts
     el('div', { class: 'btn-row' },
       el('button', { class: 'btn primary', type: 'submit' }, editing ? '저장' : '추가'),
       el('a', { class: 'btn',
-        href: editing ? `#/receipts/${receiptId}` : `#/trips/${trip.id}` }, '취소'),
+        href: editing ? `#/receipts/${receiptId}` : `#${travelPath(tripId)}` }, '취소'),
     ),
   );
 
   const dateInput = form.querySelector<HTMLInputElement>('[name="purchasedAt"]')!;
   const merchantInput = form.querySelector<HTMLInputElement>('[name="merchant"]')!;
-  const exchange = createExchangeField(currencyInput, dateInput, totalInput, trip.currency, existing?.exchangeRates);
+  const exchange = createExchangeField(currencyInput, dateInput, totalInput, trip?.currency ?? null, existing?.exchangeRates);
+  const subtitle = el('p', { class: 'subtitle', text: trip?.name ?? '여행 미지정' });
+  tripInput.addEventListener('change', () => {
+    subtitle.textContent = currentTrip()?.name ?? '여행 미지정';
+    exchange.setTarget(currentTrip()?.currency ?? null);
+  });
   form.querySelector('.field-row')!.after(exchange.element);
 
   // 저장된 OCR 원문을 다시 추출한다. 결과가 없는 필드는 현재 입력을 보존한다.
@@ -462,7 +473,7 @@ const total = amounts
 
     const taxRaw = taxField.input.value;
     const draft = {
-      tripId: trip.id,
+      tripId: tripInput.value || null,
       imageId: existing?.imageId ?? null,
       merchant: v['merchant'] ?? '',
       purchasedAt: date.toISOString(),
@@ -495,8 +506,8 @@ const total = amounts
 
   return el('div', {},
     el('a', { class: 'back-link',
-      href: editing ? `#/receipts/${receiptId}` : `#/trips/${trip.id}` }, '← 돌아가기'),
-    pageHeader(editing ? '영수증 수정' : '영수증 추가', trip.name),
+      href: editing ? `#/receipts/${receiptId}` : `#${travelPath(tripId)}` }, '← 돌아가기'),
+    el('header', { class: 'page-header' }, el('h1', { text: editing ? '영수증 수정' : '영수증 추가' }), subtitle),
     existing?.imageId ? createReceiptImage(existing.imageId) : null,
     existing?.ocr && ocrRows.length > 0
       ? el('details', { class: 'ocr-raw' },

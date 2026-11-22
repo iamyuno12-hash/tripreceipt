@@ -80,7 +80,8 @@ export interface ReceiptItem {
 
 export interface Receipt {
   readonly id: string;
-  readonly tripId: string;
+  /** null이면 여행 미지정 보관함. 기존 여행 ID는 그대로 유지한다. */
+  readonly tripId: string | null;
   /** 원본 이미지 키. P2 에서 IndexedDB 의 Blob 저장소를 가리킨다 */
   readonly imageId: string | null;
   readonly merchant: string;

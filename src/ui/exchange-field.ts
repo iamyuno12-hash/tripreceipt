@@ -8,13 +8,14 @@ export interface ExchangeField {
   readonly element: HTMLElement;
   rates(): readonly ExchangeRate[];
   validate(): string | null;
+  setTarget(currency: string | null): void;
 }
 
 export function createExchangeField(
   currencyInput: HTMLSelectElement,
   dateInput: HTMLInputElement,
   totalInput: HTMLInputElement,
-  target: string,
+  target: string | null,
   saved: readonly ExchangeRate[] = [],
 ): ExchangeField {
   let draft: ExchangeRate | null = null;
@@ -37,6 +38,7 @@ export function createExchangeField(
   );
 
   function drawPreview(): void {
+    if (!target) return;
     const amount = Number(totalInput.value);
     const rate = Number(input.value);
     preview.textContent = input.value && totalInput.value !== '' && Number.isFinite(rate) && rate > 0 && Number.isFinite(amount)
@@ -53,27 +55,28 @@ export function createExchangeField(
   }
 
   async function refresh(retry = false): Promise<void> {
+    const to = target;
     const from = currencyInput.value;
     const date = paymentDate(dateInput.value);
     const key = `${from}:${target}:${date}`;
     if (!retry && key === currentKey) { drawPreview(); return; }
     currentKey = key;
     const token = ++epoch;
-    element.hidden = from === target;
+    element.hidden = !to || from === to;
     draft = null;
     input.value = '';
     manual = false;
     button.disabled = false;
-    if (element.hidden) return;
-    label.textContent = `1 ${from} = 아래 금액 (${target})`;
-    const stored = histories.find(rate => validRate(rate, from, target, date));
+    if (!to || element.hidden) return;
+    label.textContent = `1 ${from} = 아래 금액 (${to})`;
+    const stored = histories.find(rate => validRate(rate, from, to, date));
     if (stored && !retry) { useRate(stored); return; }
     drawPreview();
     if (!date) { hint.textContent = '결제 일시를 입력하면 날짜별 환율을 불러옵니다.'; return; }
     button.disabled = true;
     hint.textContent = '결제일 기준 환율을 불러오는 중… 조회가 끝나기 전에도 영수증을 저장할 수 있습니다.';
     try {
-      const result = await lookupExchangeRate(from, target, date, retry);
+      const result = await lookupExchangeRate(from, to, date, retry);
       if (token !== epoch) return;
       useRate(result);
     } catch {
@@ -90,7 +93,7 @@ export function createExchangeField(
     button.disabled = false;
     const rate = input.valueAsNumber;
     const date = paymentDate(dateInput.value);
-    if (Number.isFinite(rate) && rate > 0 && date) {
+    if (Number.isFinite(rate) && rate > 0 && date && target) {
       draft = { from: currencyInput.value, to: target, rate, requestedDate: date, date,
         source: 'manual', recordedAt: new Date().toISOString() };
       hint.textContent = '직접 입력한 환율입니다. 저장하면 이후에도 이 값을 사용합니다.';
@@ -104,14 +107,24 @@ export function createExchangeField(
 
   return {
     element,
+    setTarget: currency => {
+      if (currency === target) return;
+      if (draft) {
+        const index = histories.findIndex(rate => validRate(rate, draft!.from, draft!.to, draft!.requestedDate));
+        if (index >= 0) histories.splice(index, 1);
+        histories.push(draft);
+      }
+      target = currency; currentKey = ''; void refresh();
+    },
     validate: () => !element.hidden && manual && (input.validity.badInput ||
       (input.value !== '' && (!Number.isFinite(input.valueAsNumber) || input.valueAsNumber <= 0)))
       ? '환율은 0보다 큰 숫자로 입력하세요.' : null,
     rates: () => {
-      if (element.hidden) return histories;
+      const to = target;
+      if (!to || element.hidden) return histories;
       const date = paymentDate(dateInput.value);
-      const rest = histories.filter(rate => !validRate(rate, currencyInput.value, target, date));
-      return draft && validRate(draft, currencyInput.value, target, date) ? [...rest, draft] : rest;
+      const rest = histories.filter(rate => !validRate(rate, currencyInput.value, to, date));
+      return draft && validRate(draft, currencyInput.value, to, date) ? [...rest, draft] : rest;
     },
   };
 }

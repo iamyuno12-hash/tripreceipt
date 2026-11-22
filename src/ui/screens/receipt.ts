@@ -15,6 +15,7 @@ import { crossCheck, hasReceiptContent, type Receipt } from '../../types.ts';
 import { prepareExchangeRates } from '../../exchange.ts';
 import { conversionNote } from '../exchange-display.ts';
 import { createDeleteButton } from '../delete-action.ts';
+import { receiptBackPath } from '../travel-state.ts';
 import { groupLinesByY, lineTolerance, toTextLines } from '../../ocr/lines.ts';
 
 function checkBanner(r: Receipt): HTMLElement {
@@ -62,8 +63,9 @@ export async function renderReceipt(params: Record<string, string>): Promise<HTM
     );
   }
 
-  const trip = await getTrip(savedReceipt.tripId);
+  const trip = savedReceipt.tripId ? await getTrip(savedReceipt.tripId) : undefined;
   const receipt = trip ? (await prepareExchangeRates([trip], [savedReceipt]))[0]! : savedReceipt;
+  const backPath = receiptBackPath(receipt.id, receipt.tripId);
   const actionError = el('p', { class: 'field-hint', role: 'alert' });
   const c = crossCheck(receipt);
 
@@ -78,9 +80,8 @@ export async function renderReceipt(params: Record<string, string>): Promise<HTM
   );
 
   return el('div', {},
-    trip
-      ? el('a', { class: 'back-link', href: `#/trips/${trip.id}` }, `← ${trip.name}`)
-      : el('a', { class: 'back-link', href: '#/' }, '← 여행 목록'),
+    el('a', { class: 'back-link', href: `#${backPath}` },
+      backPath === '/' ? '← 여행 목록' : `← ${trip?.name ?? '여행 미지정'}`),
 
     pageHeader(receipt.merchant || '(상호 미인식)', dateTime(receipt.purchasedAt)),
 
@@ -161,7 +162,7 @@ export async function renderReceipt(params: Record<string, string>): Promise<HTM
             onclick: (ev: Event) => {
               const btn = ev.currentTarget as HTMLButtonElement;
               btn.disabled = true;
-              void confirmReceipt(receipt.id).then(() => navigate(`/trips/${receipt.tripId}`)).catch(err => {
+              void confirmReceipt(receipt.id).then(() => navigate(backPath)).catch(err => {
                 btn.disabled = false;
                 actionError.textContent = err instanceof Error ? err.message : '확인하지 못했습니다.';
               });
@@ -170,7 +171,7 @@ export async function renderReceipt(params: Record<string, string>): Promise<HTM
       createDeleteButton({
         label: '영수증 삭제',
         message: '이 영수증을 삭제할까요? 연결된 사진도 함께 삭제되며 되돌릴 수 없습니다.',
-        remove: () => deleteReceipt(receipt.id), destination: trip ? `/trips/${trip.id}` : '/',
+        remove: () => deleteReceipt(receipt.id), destination: backPath,
         onError: message => { actionError.textContent = message; },
       }),
     ),
