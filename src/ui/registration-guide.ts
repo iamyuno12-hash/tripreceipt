@@ -16,7 +16,7 @@ export function registrationGuide(): HTMLElement {
         ),
         el('div', { class: 'guide-status-row' },
           el('dt', {}, el('span', { class: 'status status-needs_review guide-status-tag', text: '검수 필요' })),
-          el('dd', { text: '품목 합계와 영수증 총액이 다른 상태입니다. 저장된 총액은 총지출에 포함하지만, 분류·월별 추이·여행 비교에서는 금액을 고치거나 확인 완료로 표시하기 전까지 제외됩니다.' }),
+          el('dd', { text: '품목 합계와 영수증 총액이 다른 상태입니다. 저장된 총액은 여행 총지출에 포함하지만, 분류·월별 추이·여행 비교에서는 금액을 고치거나 확인 완료로 표시하기 전까지 제외됩니다.' }),
         ),
         el('div', { class: 'guide-status-row' },
           el('dt', {}, el('span', { class: 'badge warn guide-status-tag', text: '환산 대기' })),

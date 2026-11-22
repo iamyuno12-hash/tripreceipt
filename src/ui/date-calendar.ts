@@ -33,11 +33,15 @@ function calendarIcon(): SVGSVGElement {
   return svg;
 }
 
-/** 기존 date 입력의 직접 입력·FormData 값을 유지하며 달력 버튼만 연결한다. */
-export function attachDateCalendar(input: HTMLInputElement, anchorDate: () => string): void {
+/** 기존 date 입력을 유지한다. 필요한 화면은 입력 클릭으로도 달력을 열 수 있다. 반환값은 닫기 함수다. */
+export function attachDateCalendar(
+  input: HTMLInputElement, anchorDate: () => string,
+  options: { label?: string; openOnClick?: boolean } = {},
+): (() => void) | undefined {
   // Popover 미지원 환경은 기존 브라우저 날짜 입력을 그대로 사용한다.
   if (typeof HTMLElement.prototype.showPopover !== 'function') return;
 
+  const label = options.label ?? '종료일';
   const id = `${input.id}-calendar`;
   const title = el('strong', { id: `${id}-title`, 'aria-live': 'polite' });
   const body = el('tbody');
@@ -49,7 +53,7 @@ export function attachDateCalendar(input: HTMLInputElement, anchorDate: () => st
     body,
   );
   const trigger = el('button', {
-    class: 'date-calendar-trigger', type: 'button', 'aria-label': '종료일 달력 열기',
+    class: 'date-calendar-trigger', type: 'button', 'aria-label': `${label} 달력 열기`,
     'aria-haspopup': 'dialog', 'aria-controls': id, 'aria-expanded': 'false',
     popovertarget: id, popovertargetaction: 'toggle',
   }, calendarIcon());
@@ -109,7 +113,7 @@ export function attachDateCalendar(input: HTMLInputElement, anchorDate: () => st
     const monthName = `${year}년 ${month + 1}월`;
     title.textContent = monthName;
     grid.setAttribute('aria-label', monthName);
-    selectedLabel.textContent = input.value ? `현재 종료일: ${input.value}` : '날짜를 선택하세요.';
+    selectedLabel.textContent = input.value ? `현재 ${label}: ${input.value}` : '날짜를 선택하세요.';
     const first = new Date(focused);
     first.setUTCDate(1);
     const last = new Date(first);
@@ -149,6 +153,7 @@ export function attachDateCalendar(input: HTMLInputElement, anchorDate: () => st
   }
 
   function show(): void {
+    if (input.matches(':disabled')) return;
     if (open) { close(); return; }
     // 표시할 달만 시작일에 맞춘다. input.value는 날짜를 클릭할 때에만 바꾼다.
     focused = readDate(anchorDate()) ?? readDate(input.value) ?? readDate(dateValue(new Date()))!;
@@ -167,6 +172,7 @@ export function attachDateCalendar(input: HTMLInputElement, anchorDate: () => st
   }
 
   trigger.addEventListener('click', ev => { ev.preventDefault(); show(); });
+  if (options.openOnClick) input.addEventListener('click', show);
   input.addEventListener('keydown', ev => {
     if ((ev.altKey && ev.key === 'ArrowDown') || ev.key === 'F4' || ev.key === ' ') {
       ev.preventDefault();
@@ -202,4 +208,5 @@ export function attachDateCalendar(input: HTMLInputElement, anchorDate: () => st
     position();
     focusDay();
   });
+  return () => close();
 }

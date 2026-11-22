@@ -431,14 +431,36 @@ td.num, th.num { text-align: right; white-space: nowrap; }
 .stats-jump-label { margin-right: 4px; font-size: 0.78rem; color: var(--text-dim); }
 .stats-export { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; margin-bottom: 20px; }
 .stats-export-note { flex: 1 1 240px; margin: 0; font-size: 0.75rem; color: var(--text-dim); }
+.stats-accounting-guide { margin: 16px 0 20px; font-size: 0.78rem; }
+.stats-accounting-guide details { margin-top: 0; }
+.stats-accounting-guide .stats-accounting-intro { margin-top: 12px; font-size: 0.75rem; }
+.stats-accounting-guide dt { display: flex; gap: 4px; }
+.stats-accounting-guide .stats-accounting-note { margin-top: 12px; font-size: 0.75rem; }
 .stats-trip-statistics { margin: 0; padding: 24px 0; }
 .stats-trip-statistics:first-child { padding-top: 0; }
 .stats-trip-statistics:last-child { padding-bottom: 0; }
 .stats-trip-statistics + .stats-trip-statistics { border-top: 1px solid var(--guide-border); }
 .stats-trip-statistics > .stat-head { flex-wrap: wrap; margin-bottom: 12px; }
 .stats-trip-statistics .stats-trip-title { margin: 0; font-size: 1rem; overflow-wrap: anywhere; }
-.stats-travel-controls { display: grid; grid-template-columns: 160px minmax(160px, 1fr) auto; gap: 12px; margin-top: 16px; }
+.stats-trip-totals { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: flex-end; gap: 8px 20px; margin-left: auto; }
+.stats-trip-total { display: flex; align-items: baseline; flex-wrap: wrap; gap: 4px 8px; }
+.stats-total-label { font-size: 0.75rem; color: var(--text-dim); }
+.stats-trip-total-secondary { color: var(--text-dim); font-size: 0.8rem; }
+.stats-status-counts { display: flex; flex-wrap: wrap; gap: 6px; margin: 0 0 12px; }
+.stats-travel-controls { display: grid; grid-template-columns: 132px minmax(330px, 1.6fr) minmax(140px, 1fr) auto; gap: 12px; margin-top: 16px; }
 .stats-travel-controls > .btn { align-self: start; margin-top: 25px; white-space: nowrap; }
+.stats-date-range { display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); gap: 8px; min-width: 0; margin: 0; padding: 0; border: 0; }
+.stats-date-range .input { width: 100%; min-width: 0; padding-left: 8px; padding-right: 34px; font-size: 0.82rem; }
+.stats-date-range .date-calendar-trigger { right: 4px; }
+.stats-date-separator { align-self: center; margin-top: 25px; color: var(--text-dim); }
+.stats-date-range:disabled .input { color: var(--text-dim); background: var(--surface-2); cursor: default; }
+.stats-date-range:disabled .date-calendar-trigger { color: var(--text-dim); opacity: 0.4; cursor: default; }
+.stats-period-error { margin-top: 8px; font-size: 0.78rem; }
+@media (max-width: 1100px) {
+  .stats-travel-controls { grid-template-columns: 132px minmax(0, 1fr) auto; }
+  .stats-date-range { grid-column: 2 / 4; }
+  .stats-travel-search { grid-column: 1 / 3; }
+}
 .stats-comparison-card { margin: 20px 0 28px; padding: 18px 20px; border: 1px solid var(--guide-border); border-radius: 10px; background: var(--trip-summary-bg); scroll-margin-top: 24px; }
 .stats-comparison-card .stats-panel-title { font-size: 1rem; }
 .stats-categories { padding-top: 20px; border-top: 1px solid var(--guide-border); scroll-margin-top: 24px; }
@@ -472,6 +494,7 @@ td.num, th.num { text-align: right; white-space: nowrap; }
 @media (max-width: 520px) {
   .stats-panel { padding: 16px 12px; }
   .stats-travel-controls { grid-template-columns: 1fr; }
+  .stats-date-range, .stats-travel-search { grid-column: auto; }
   .stats-travel-controls > .btn { margin-top: 0; justify-self: start; }
   .stats-comparison-card { padding: 14px 12px; }
 }

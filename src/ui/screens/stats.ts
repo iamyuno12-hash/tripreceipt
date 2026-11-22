@@ -9,12 +9,46 @@ import { listAllReceipts } from '../../storage/receipts.ts';
 import { buildExpenseCsv, downloadCsv } from '../../export/csv.ts';
 import type { Receipt, Trip } from '../../types.ts';
 import { isCountable, CATEGORIES } from '../../types.ts';
-import { expensesByMonth, summarizeExpenses } from '../../currency.ts';
+import { expensesByMonth, paymentDate, summarizeExpenses, sumMoney } from '../../currency.ts';
 import { prepareExchangeRates } from '../../exchange.ts';
 import { expenseText } from '../exchange-display.ts';
 import { CURRENCIES, selectField } from '../form.ts';
 import { renderMonthlyChart } from '../monthly-chart.ts';
 import { renderTravelStatistics, type TravelFilters } from '../trip-comparison.ts';
+
+/** 화면별 금액의 의미와 상태별 제외 기준은 이 안내 한 곳에서 설명한다. */
+function statisticsGuide(): HTMLElement {
+  return el('aside', { class: 'registration-guide stats-accounting-guide', 'aria-label': '통계 집계 기준' },
+    el('details', {},
+      el('summary', { text: '통계 집계 기준' }),
+      el('p', { class: 'stats-accounting-intro',
+        text: '월별 추이·여행 비교는 영수증 총액, 분류별 구성은 품목 금액을 합산합니다. 금액은 각 여행의 기준 통화로 환산하며, 기준 통화가 다른 여행끼리는 합산하지 않습니다.' }),
+      el('dl', { class: 'guide-status-list' },
+        el('div', { class: 'guide-status-row' },
+          el('dt', {},
+            el('span', { class: 'status status-parsed guide-status-tag', text: '인식 완료' }),
+            el('span', { class: 'status status-confirmed guide-status-tag', text: '확인됨' }),
+          ),
+          el('dd', { text: '월별 추이·여행 비교·분류 합계에 포함됩니다.' }),
+        ),
+        el('div', { class: 'guide-status-row' },
+          el('dt', {}, el('span', { class: 'status status-needs_review guide-status-tag', text: '검수 필요' })),
+          el('dd', { text: '여행 목록·상세의 총지출과 아래 영수증 총액에는 포함하지만, 월별 추이·여행 비교·분류 합계에서는 제외합니다.' }),
+        ),
+        el('div', { class: 'guide-status-row' },
+          el('dt', {}, el('span', { class: 'status status-pending guide-status-tag', text: '인식 대기' })),
+          el('dd', { text: '품목·금액을 아직 저장하지 않은 상태로, 총지출과 통계에서 제외합니다.' }),
+        ),
+        el('div', { class: 'guide-status-row' },
+          el('dt', {}, el('span', { class: 'badge warn guide-status-tag', text: '환산 대기' })),
+          el('dd', { text: '여행 기준 통화의 환율이 없어 총지출과 통계에서 제외합니다. 영수증 수정 화면에서 환율을 입력하거나 조회하세요. 검수 상태와 별개이므로 다른 상태와 함께 표시될 수 있습니다.' }),
+        ),
+      ),
+      el('p', { class: 'stats-accounting-note',
+        text: '분류 비율은 분류 합계 기준입니다. 확인된 영수증도 품목 합계와 총액이 다르면 두 합계는 다를 수 있습니다.' }),
+    ),
+  );
+}
 
 /** 모든 여행의 검수 완료된 영수증을 모아, 최근 1년 월별 지출을 통화별로 표시한다. */
 function renderOverallTrend(trips: readonly Trip[], receipts: readonly Receipt[]): HTMLElement {
@@ -23,7 +57,16 @@ function renderOverallTrend(trips: readonly Trip[], receipts: readonly Receipt[]
     tripIds.has(receipt.tripId) && isCountable(receipt),
   );
   const currencies = [...new Set(trips.filter(trip => eligible.some(r => r.tripId === trip.id)).map(trip => trip.currency))].sort();
-  const pending = trips.reduce((n, trip) => n + summarizeExpenses(eligible.filter(r => r.tripId === trip.id), trip.currency).pending, 0);
+  const today = new Date();
+  const first = new Date(today.getFullYear(), today.getMonth() - 12, 1);
+  const monthKey = (date: Date): string => `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
+  const firstMonth = monthKey(first);
+  const lastMonth = monthKey(today);
+  const inRange = eligible.filter(receipt => {
+    const month = paymentDate(receipt.purchasedAt).slice(0, 7);
+    return month >= firstMonth && month <= lastMonth;
+  });
+  const pending = trips.reduce((n, trip) => n + summarizeExpenses(inRange.filter(r => r.tripId === trip.id), trip.currency).pending, 0);
 
   return el('section', { class: 'stat-section stats-panel', 'aria-labelledby': 'stats-trend-title' },
     el('header', { class: 'stats-panel-header' },
@@ -31,14 +74,12 @@ function renderOverallTrend(trips: readonly Trip[], receipts: readonly Receipt[]
         text: '월별 지출 추이' }),
       el('p', { class: 'stats-panel-purpose', text: '1년 전부터 이번 달까지, 월별 지출의 흐름을 봅니다.' }),
     ),
-    el('p', { class: 'stat-note',
-      text: '검수 완료 영수증을 각 여행의 기준 통화로 환산해 합산합니다. 기준 통화가 다른 여행은 구분합니다.' }),
-    pending > 0 ? el('p', { class: 'stat-note', text: `환산 대기 ${pending}장이 빠진 부분 집계입니다.` }) : null,
+    pending > 0 ? el('p', { class: 'stat-note', text: `표시 기간 내 환산 대기 ${pending}장 제외 · 부분 집계` }) : null,
     currencies.length === 0
       ? emptyState('집계할 지출 내역이 없습니다.')
       : el('div', {},
           ...currencies.map(currency => {
-            const points = expensesByMonth(trips, eligible, currency);
+            const points = expensesByMonth(trips, eligible, currency, today);
             return el('div', { style: 'margin-top:20px' },
               el('h3', { text: `${currency} 기준`, style: 'font-size:0.94rem;margin:0 0 10px' }),
               renderMonthlyChart(points, currency),
@@ -50,8 +91,9 @@ function renderOverallTrend(trips: readonly Trip[], receipts: readonly Receipt[]
 
 function renderTripStatistics(trip: Trip, receipts: readonly Receipt[]): HTMLElement {
   const summary = summarizeExpenses(receipts, trip.currency);
-  const byCat = summary.byCategory;
-  const categoryTotal = [...byCat.values()].reduce((sum, amount) => sum + amount, 0);
+  const counted = summarizeExpenses(receipts.filter(isCountable), trip.currency);
+  const byCat = counted.byCategory;
+  const categoryTotal = sumMoney([...byCat.values()], trip.currency);
   const max = Math.max(1, ...byCat.values());
 
   const rows = CATEGORIES
@@ -69,27 +111,33 @@ function renderTripStatistics(trip: Trip, receipts: readonly Receipt[]): HTMLEle
       );
     });
 
-  const excluded = receipts.filter(r => !isCountable(r)).length;
+  const reviewCount = receipts.filter(r => r.status === 'needs_review').length;
+  const pendingCount = receipts.filter(r => r.status === 'pending').length;
   return el('section', { class: 'stat-section stats-trip-statistics', 'aria-label': trip.name, 'data-trip-id': trip.id },
     el('div', { class: 'stat-head' },
       el('h4', { class: 'section-title stats-trip-title', text: trip.name }),
-      el('span', {
-        class: 'stat-total',
-        title: '여행 기준 통화로 환산한 영수증 총액 (검수 전 금액 포함)',
-        text: expenseText(summary, trip.currency),
-      }),
+      el('div', { class: 'stats-trip-totals' },
+        el('div', { class: 'stats-trip-total' },
+          el('span', { class: 'stats-total-label', text: '분류 합계' }),
+          el('strong', { class: 'stat-total stats-category-total',
+            text: expenseText({ ...counted, total: categoryTotal }, trip.currency) }),
+        ),
+        el('div', { class: 'stats-trip-total stats-trip-total-secondary' },
+          el('span', { class: 'stats-total-label', text: '영수증 총액' }),
+          el('span', { class: 'stats-receipt-total', text: expenseText(summary, trip.currency) }),
+        ),
+      ),
     ),
+    reviewCount > 0 || pendingCount > 0 || summary.pending > 0
+      ? el('div', { class: 'stats-status-counts', 'aria-label': '집계 참고 상태' },
+          reviewCount > 0 ? el('span', { class: 'status status-needs_review', text: `검수 필요 ${reviewCount}장` }) : null,
+          pendingCount > 0 ? el('span', { class: 'status status-pending', text: `인식 대기 ${pendingCount}장` }) : null,
+          summary.pending > 0 ? el('span', { class: 'badge warn', text: `환산 대기 ${summary.pending}장` }) : null,
+        )
+      : null,
     rows.length === 0
       ? emptyState('아직 집계할 품목이 없습니다.')
       : el('div', { class: 'bars' }, ...rows),
-    excluded > 0
-      ? el('p', { class: 'stat-note',
-          text: `검수가 필요하거나 아직 인식되지 않은 ${excluded}장은 분류/전체 추이/비교 집계에서 제외했습니다.` })
-      : null,
-    summary.pending > 0
-      ? el('p', { class: 'stat-note',
-          text: `환산 대기 ${summary.pending}장은 합계와 통계에서 빠져 있습니다. 해당 영수증 수정 화면에서 환율을 입력하세요. CSV에는 원금액과 대기 상태가 포함됩니다.` })
-      : null,
     el('div', { class: 'btn-row' },
       el('button', {
         class: 'btn', type: 'button',
@@ -199,10 +247,11 @@ export async function renderStats(): Promise<HTMLElement> {
         onclick: () => downloadCsv(buildExpenseCsv(trips, all), 'tripreceipt-all.csv'),
       }, '전체 CSV 내보내기'),
       el('p', { class: 'stats-export-note',
-        text: '전체 CSV는 표시 통화와 관계없이 모든 여행을 포함합니다. 사진은 포함되지 않습니다.' }),
+        text: '전체 CSV는 통화·기간·검색 조건과 관계없이 모든 여행·영수증을 포함합니다. 사진은 포함되지 않습니다.' }),
     ),
     filter,
     selectionStatus,
+    statisticsGuide(),
     navigation,
     results,
   );

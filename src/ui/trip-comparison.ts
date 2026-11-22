@@ -6,10 +6,13 @@ import { el, emptyState } from './dom.ts';
 import { dateRange } from './format.ts';
 import { expenseText } from './exchange-display.ts';
 import { field, selectField } from './form.ts';
+import { attachDateCalendar } from './date-calendar.ts';
 
 export interface TravelFilters {
-  period: 'year' | '3months' | 'month' | 'all';
+  period: 'year' | '3months' | 'month' | 'all' | 'custom';
   query: string;
+  customStart?: string;
+  customEnd?: string;
 }
 
 function calendarDate(year: number, month: number, day: number): string {
@@ -42,15 +45,30 @@ export function renderTravelStatistics(
     trip, summary: summarizeExpenses((byTrip.get(trip.id) ?? []).filter(isCountable), trip.currency),
   }));
   const today = new Date();
-  const end = calendarDate(today.getFullYear(), today.getMonth(), today.getDate());
+  const todayValue = calendarDate(today.getFullYear(), today.getMonth(), today.getDate());
+  const allStart = trips.map(trip => trip.startDate).sort()[0] ?? '';
+  const allEnd = trips.map(trip => trip.endDate).sort().at(-1) ?? '';
   const periodField = selectField('여행 기간', 'travelPeriod', [
-    ['year', '1년'], ['3months', '3개월'], ['month', '1개월'], ['all', '전체 기간'],
+    ['year', '1년'], ['3months', '3개월'], ['month', '1개월'], ['all', '전체 기간'], ['custom', '직접 설정'],
   ], filters.period);
+  const startField = field({ label: '조회 시작일', name: 'travelStart', type: 'date', required: true });
+  const endField = field({ label: '조회 종료일', name: 'travelEnd', type: 'date', required: true });
+  const startDate = startField.querySelector<HTMLInputElement>('input')!;
+  const endDate = endField.querySelector<HTMLInputElement>('input')!;
+  const dateFields = el('fieldset', { class: 'stats-date-range', 'aria-label': '여행 기간과 겹치는 조회 날짜 범위' },
+    startField, el('span', { class: 'stats-date-separator', 'aria-hidden': 'true', text: '~' }), endField,
+  );
+  const closeStartCalendar = attachDateCalendar(startDate, () => startDate.value,
+    { label: '조회 시작일', openOnClick: true });
+  const closeEndCalendar = attachDateCalendar(endDate, () => endDate.value || startDate.value,
+    { label: '조회 종료일', openOnClick: true });
   const searchField = field({ label: '여행 이름', name: 'travelQuery', type: 'search',
     value: filters.query, placeholder: '여행 이름으로 검색' });
+  searchField.classList.add('stats-travel-search');
   const period = periodField.querySelector<HTMLSelectElement>('select')!;
   const search = searchField.querySelector<HTMLInputElement>('input')!;
-  const periodHint = el('p', { class: 'stat-note', id: 'travel-period-hint' });
+  const periodError = el('p', { class: 'form-error stats-period-error', id: 'travel-period-error',
+    role: 'status', 'aria-live': 'polite' });
   const status = el('p', { class: 'stat-note', role: 'status', 'aria-live': 'polite', 'aria-atomic': 'true' });
   const results = el('div', { class: 'stats-comparison-results', id: 'stats-comparison-results',
     role: 'region', 'aria-label': '여행 간 지출 비교 결과', tabindex: 0 });
@@ -64,11 +82,12 @@ export function renderTravelStatistics(
       ), results,
     ), categories,
   );
-  for (const input of [period, search]) input.setAttribute('aria-controls', 'stats-travel-results');
-  period.setAttribute('aria-describedby', 'travel-period-hint');
+  for (const input of [period, search, startDate, endDate]) input.setAttribute('aria-controls', 'stats-travel-results');
+  for (const input of [startDate, endDate]) input.setAttribute('aria-describedby', 'travel-period-error');
   const reset = el('button', { class: 'btn', type: 'button', text: '조건 해제',
     onclick: () => {
       filters.period = 'all'; filters.query = '';
+      delete filters.customStart; delete filters.customEnd;
       period.value = 'all'; search.value = '';
       drawResults();
     },
@@ -76,13 +95,23 @@ export function renderTravelStatistics(
 
   function drawResults(): void {
     const months = filters.period === 'year' ? 12 : filters.period === '3months' ? 3 : 1;
-    const start = filters.period === 'all' ? null : periodStart(today, months);
+    const custom = filters.period === 'custom';
+    startDate.value = filters.period === 'all' ? allStart
+      : custom ? filters.customStart ?? periodStart(today, 12) : periodStart(today, months);
+    endDate.value = filters.period === 'all' ? allEnd : custom ? filters.customEnd ?? todayValue : todayValue;
+    dateFields.disabled = !custom;
+    if (!custom) { closeStartCalendar?.(); closeEndCalendar?.(); }
+    const start = startDate.value;
+    const end = endDate.value;
+    const error = !custom ? '' : !start || !end ? '시작일과 종료일을 모두 선택하세요.'
+      : start > end ? '종료일은 시작일과 같거나 이후여야 합니다.' : '';
+    periodError.textContent = error;
+    periodError.hidden = !error;
+    startDate.setAttribute('aria-invalid', String(custom && !start));
+    endDate.setAttribute('aria-invalid', String(custom && (!end || start > end)));
     const query = normalizeName(filters.query);
     const visible = summaries.filter(({ trip }) =>
-      (start === null || (trip.startDate <= end && trip.endDate >= start)) && normalizeName(trip.name).includes(query));
-    periodHint.textContent = start === null
-      ? '전체 여행 기간을 표시합니다.'
-      : `${dateRange(start, end)}와 여행 기간이 겹치는 여행을 표시합니다.`;
+      !error && (filters.period === 'all' || (trip.startDate <= end && trip.endDate >= start)) && normalizeName(trip.name).includes(query));
     status.textContent = `선택 여행 ${visible.length}개 / 현재 통화 여행 ${trips.length}개`;
     reset.disabled = filters.period === 'all' && filters.query.length === 0;
 
@@ -111,7 +140,9 @@ export function renderTravelStatistics(
         )),
       );
     }));
-    if (registeredTripCount < 2) {
+    if (error) {
+      results.replaceChildren(emptyState('조회 기간을 확인하세요.'));
+    } else if (registeredTripCount < 2) {
       results.replaceChildren(emptyState('여행이 2개 이상 등록되면 지출을 비교할 수 있습니다.'));
     } else if (visible.length === 0) {
       results.appendChild(emptyState('조건에 맞는 여행이 없습니다.', '기간을 바꾸거나 여행 이름을 지워 보세요.'));
@@ -121,13 +152,22 @@ export function renderTravelStatistics(
   }
 
   period.addEventListener('change', () => {
+    if (period.value === 'custom') {
+      filters.customStart ??= startDate.value || periodStart(today, 12);
+      filters.customEnd ??= endDate.value || todayValue;
+    }
     filters.period = period.value as TravelFilters['period']; drawResults();
+  });
+  for (const input of [startDate, endDate]) input.addEventListener('input', () => {
+    if (filters.period !== 'custom') return;
+    filters.customStart = startDate.value; filters.customEnd = endDate.value;
+    drawResults();
   });
   search.addEventListener('input', () => { filters.query = search.value; drawResults(); });
   section.append(
-    el('p', { class: 'stat-note', text: '기간·검색은 아래 비교와 지출 구성에 함께 적용됩니다. 금액은 선택한 여행 전체 기준입니다.' }),
-    el('div', { class: 'stats-travel-controls' }, periodField, searchField, reset),
-    periodHint, status, sharedResults,
+    el('p', { class: 'stat-note', text: '분류 합계는 검수 필요를 뺀 품목 금액, 영수증 총액은 검수 필요를 포함한 총액이므로 서로 다를 수 있습니다.' }),
+    el('div', { class: 'stats-travel-controls' }, periodField, dateFields, searchField, reset),
+    periodError, status, sharedResults,
   );
   drawResults();
   return section;
