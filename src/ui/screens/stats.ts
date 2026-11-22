@@ -1,7 +1,6 @@
 /**
  * P6: 카테고리별 통계 + 전체 여행 월별 지출 추이 + 여행 간 비교 + CSV 다운로드.
- * src/ui/screens/stats.ts 를 이 파일로 교체한다.
- * 기존 CSS(.bars, .bar-row, .bar-track 등)를 재사용한다.
+ * 여행의 집계 기준 통화별로 표시 범위를 선택한다.
  */
 import { el, pageHeader, emptyState } from '../dom.ts';
 import { money } from '../format.ts';
@@ -13,6 +12,7 @@ import { isCountable, CATEGORIES } from '../../types.ts';
 import { expensesByMonth, summarizeExpenses } from '../../currency.ts';
 import { prepareExchangeRates } from '../../exchange.ts';
 import { expenseText } from '../exchange-display.ts';
+import { CURRENCIES, selectField } from '../form.ts';
 
 /** 숫자를 비교하기 쉬운 막대로 표시한다. */
 function amountBars(
@@ -70,8 +70,11 @@ function renderOverallTrend(trips: readonly Trip[], receipts: readonly Receipt[]
 }
 
 /** 기준 통화가 같은 여행끼리만 총지출을 비교한다. */
-function renderComparison(trips: readonly Trip[], byTrip: ReadonlyMap<string, Receipt[]>): HTMLElement {
-  if (trips.length < 2) {
+function renderComparison(
+  trips: readonly Trip[], byTrip: ReadonlyMap<string, Receipt[]>, registeredTripCount = trips.length,
+): HTMLElement {
+  // 표시 필터를 바꿔도 기존 통화별 비교 영역과 막대 값은 유지한다.
+  if (registeredTripCount < 2) {
     return el('section', { class: 'stat-section' },
       el('h2', { class: 'section-title', text: '여행 간 지출 비교' }),
       emptyState('여행이 2개 이상 등록되면 지출을 비교할 수 있습니다.'),
@@ -114,6 +117,59 @@ function renderComparison(trips: readonly Trip[], byTrip: ReadonlyMap<string, Re
   );
 }
 
+function renderTripStatistics(trip: Trip, receipts: readonly Receipt[]): HTMLElement {
+  const summary = summarizeExpenses(receipts, trip.currency);
+  const byCat = summary.byCategory;
+  const categoryTotal = [...byCat.values()].reduce((sum, amount) => sum + amount, 0);
+  const max = Math.max(1, ...byCat.values());
+
+  const rows = CATEGORIES
+    .map(cat => ({ cat, amount: byCat.get(cat) ?? 0 }))
+    .filter(row => row.amount > 0)
+    .sort((a, b) => b.amount - a.amount)
+    .map(({ cat, amount }) => {
+      const share = categoryTotal > 0 ? (amount / categoryTotal) * 100 : 0;
+      return el('div', { class: 'bar-row' },
+        el('span', { class: 'bar-label', text: cat }),
+        el('div', { class: 'bar-track' },
+          el('div', { class: 'bar-fill', style: `width:${amount / max * 100}%` }),
+        ),
+        el('span', { class: 'bar-value', text: `${money(amount, trip.currency)} (${share.toFixed(1)}%)` }),
+      );
+    });
+
+  const excluded = receipts.filter(r => !isCountable(r)).length;
+  return el('section', { class: 'stat-section' },
+    el('div', { class: 'stat-head' },
+      el('h2', { class: 'section-title', text: trip.name }),
+      el('span', {
+        class: 'stat-total',
+        title: '여행 기준 통화로 환산한 영수증 총액 (검수 전 금액 포함)',
+        text: expenseText(summary, trip.currency),
+      }),
+    ),
+    rows.length === 0
+      ? emptyState('아직 집계할 품목이 없습니다.')
+      : el('div', { class: 'bars' }, ...rows),
+    excluded > 0
+      ? el('p', { class: 'stat-note',
+          text: `검수가 필요하거나 아직 인식되지 않은 ${excluded}장은 분류/전체 추이/비교 집계에서 제외했습니다.` })
+      : null,
+    summary.pending > 0
+      ? el('p', { class: 'stat-note',
+          text: `환산 대기 ${summary.pending}장은 합계와 통계에서 빠져 있습니다. 해당 영수증 수정 화면에서 환율을 입력하세요. CSV에는 원금액과 대기 상태가 포함됩니다.` })
+      : null,
+    el('div', { class: 'btn-row' },
+      el('button', {
+        class: 'btn', type: 'button',
+        onclick: () => downloadCsv(
+          buildExpenseCsv([trip], receipts), `tripreceipt-${trip.id}.csv`,
+        ),
+      }, '이 여행 CSV 내보내기'),
+    ),
+  );
+}
+
 export async function renderStats(): Promise<HTMLElement> {
   const [trips, saved] = await Promise.all([listTrips(), listAllReceipts()]);
   const all = await prepareExchangeRates(trips, saved);
@@ -132,70 +188,50 @@ export async function renderStats(): Promise<HTMLElement> {
     else byTrip.set(r.tripId, [r]);
   }
 
-  const sections = trips.map((trip) => {
-    const receipts = byTrip.get(trip.id) ?? [];
-    const summary = summarizeExpenses(receipts, trip.currency);
-    const byCat = summary.byCategory;
-    const categoryTotal = [...byCat.values()].reduce((sum, amount) => sum + amount, 0);
-    const max = Math.max(1, ...byCat.values());
+  const currencyCounts = new Map<string, number>();
+  for (const trip of trips) currencyCounts.set(trip.currency, (currencyCounts.get(trip.currency) ?? 0) + 1);
+  const currencyLabels = new Map(CURRENCIES);
+  const availableCurrencies = [...currencyCounts.keys()].sort((a, b) =>
+    (currencyCounts.get(b) ?? 0) - (currencyCounts.get(a) ?? 0) || a.localeCompare(b));
+  const filter = selectField('표시 통화', 'statsCurrency', [
+    ['', '전체 통화'],
+    ...availableCurrencies.map(currency => [currency, currencyLabels.get(currency) ?? currency] as const),
+  ], '');
+  filter.classList.add('stats-currency-filter');
+  const select = filter.querySelector<HTMLSelectElement>('select')!;
+  select.setAttribute('aria-describedby', 'stats-currency-hint');
+  select.setAttribute('aria-controls', 'stats-results');
+  filter.appendChild(el('span', { class: 'field-hint', id: 'stats-currency-hint',
+    text: '여행의 집계 기준 통화로 구분합니다.' }));
+  const selectionStatus = el('p', { class: 'stat-note', role: 'status', 'aria-live': 'polite' });
+  const results = el('div', { id: 'stats-results' });
 
-    const rows = CATEGORIES
-      .map(cat => ({ cat, amount: byCat.get(cat) ?? 0 }))
-      .filter(row => row.amount > 0)
-      .sort((a, b) => b.amount - a.amount)
-      .map(({ cat, amount }) => {
-        const share = categoryTotal > 0 ? (amount / categoryTotal) * 100 : 0;
-        return el('div', { class: 'bar-row' },
-          el('span', { class: 'bar-label', text: cat }),
-          el('div', { class: 'bar-track' },
-            el('div', { class: 'bar-fill', style: `width:${amount / max * 100}%` }),
-          ),
-          el('span', { class: 'bar-value', text: `${money(amount, trip.currency)} (${share.toFixed(1)}%)` }),
-        );
-      });
-
-    const excluded = receipts.filter(r => !isCountable(r)).length;
-    return el('section', { class: 'stat-section' },
-      el('div', { class: 'stat-head' },
-        el('h2', { class: 'section-title', text: trip.name }),
-        el('span', {
-          class: 'stat-total',
-          title: '여행 기준 통화로 환산한 영수증 총액 (검수 전 금액 포함)',
-          text: expenseText(summary, trip.currency),
-        }),
-      ),
-      rows.length === 0
-        ? emptyState('아직 집계할 품목이 없습니다.')
-        : el('div', { class: 'bars' }, ...rows),
-      excluded > 0
-        ? el('p', { class: 'stat-note',
-            text: `검수가 필요하거나 아직 인식되지 않은 ${excluded}장은 분류/전체 추이/비교 집계에서 제외했습니다.` })
-        : null,
-      summary.pending > 0
-        ? el('p', { class: 'stat-note',
-            text: `환산 대기 ${summary.pending}장은 합계와 통계에서 빠져 있습니다. 해당 영수증 수정 화면에서 환율을 입력하세요. CSV에는 원금액과 대기 상태가 포함됩니다.` })
-        : null,
-      el('div', { class: 'btn-row' },
-        el('button', {
-          class: 'btn', type: 'button',
-          onclick: () => downloadCsv(
-            buildExpenseCsv([trip], receipts), `tripreceipt-${trip.id}.csv`,
-          ),
-        }, '이 여행 CSV 내보내기'),
-      ),
+  function drawStatistics(): void {
+    const currency = select.value;
+    const visibleTrips = currency ? trips.filter(trip => trip.currency === currency) : trips;
+    const visibleIds = new Set(visibleTrips.map(trip => trip.id));
+    const visibleReceipts = all.filter(receipt => visibleIds.has(receipt.tripId));
+    selectionStatus.textContent = `${currency ? `${currency} 기준` : '전체 통화'} · 여행 ${visibleTrips.length}개`;
+    results.replaceChildren(
+      renderOverallTrend(visibleTrips, visibleReceipts),
+      renderComparison(visibleTrips, byTrip, trips.length),
+      ...visibleTrips.map(trip => renderTripStatistics(trip, byTrip.get(trip.id) ?? [])),
     );
-  });
+  }
+  select.addEventListener('change', drawStatistics);
+  drawStatistics();
 
   return el('div', {},
     pageHeader('통계', '전체 월별 지출 추이와 여행별·카테고리별 지출을 확인합니다.'),
+    filter,
     el('div', { class: 'btn-row' },
       el('button', {
         class: 'btn primary', type: 'button',
         onclick: () => downloadCsv(buildExpenseCsv(trips, all), 'tripreceipt-all.csv'),
       }, '전체 CSV 내보내기'),
     ),
-    renderOverallTrend(trips, all),
-    renderComparison(trips, byTrip),
-    ...sections,
+    el('p', { class: 'stat-note', text: '전체 CSV는 표시 통화와 관계없이 모든 여행을 포함합니다.' }),
+    selectionStatus,
+    results,
   );
 }
