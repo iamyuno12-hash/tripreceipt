@@ -2,7 +2,7 @@
 import { el, pageHeader, emptyState } from '../dom.ts';
 import { dateRange } from '../format.ts';
 import type { Trip } from '../../types.ts';
-import { getTrip, listTrips, deleteTrip } from '../../storage/trips.ts';
+import { getTrip, deleteTrip } from '../../storage/trips.ts';
 import { listReceipts } from '../../storage/receipts.ts';
 import { isSampleLoaded } from '../../storage/meta.ts';
 import { summarizeExpenses } from '../../currency.ts';
@@ -11,19 +11,18 @@ import { sampleBanner } from './home.ts';
 import { expenseText } from '../exchange-display.ts';
 import { receiptRow } from '../receipt-list.ts';
 import { createDeleteButton } from '../delete-action.ts';
-import { createRegistrationDialog } from '../registration-dialog.ts';
+import { receiptRegistrationActions } from '../registration-dialog.ts';
 import { registrationGuide } from '../registration-guide.ts';
 import { rememberTravelPosition, travelPath } from '../travel-state.ts';
 
 async function renderTravelDetail(trip: Trip | null): Promise<HTMLElement> {
-  const [trips, saved, sample] = await Promise.all([listTrips(), listReceipts(trip?.id ?? null), isSampleLoaded()]);
+  const [saved, sample] = await Promise.all([listReceipts(trip?.id ?? null), isSampleLoaded()]);
   const receipts = trip ? await prepareExchangeRates([trip], saved) : saved;
   const summary = trip ? summarizeExpenses(receipts, trip.currency) : null;
   const review = receipts.filter(receipt => receipt.status === 'needs_review').length;
   const path = travelPath(trip?.id ?? null);
   const page = el('div', { class: 'trip-detail-page', 'data-page-key': path, 'data-return-path': path,
     'data-travel-group': trip?.id ?? 'unassigned' });
-  const registration = createRegistrationDialog(trips, () => rememberTravelPosition(page));
   const error = el('p', { class: 'field-hint', role: 'alert' });
   page.append(
     registrationGuide(),
@@ -52,15 +51,13 @@ async function renderTravelDetail(trip: Trip | null): Promise<HTMLElement> {
     el('section', { class: 'travel-receipts', 'aria-labelledby': 'trip-receipts-title' },
       el('div', { class: 'travel-receipt-actions' },
         el('h2', { id: 'trip-receipts-title', text: '영수증' }),
-        el('button', { class: 'btn primary', type: 'button',
-          onclick: () => registration.open(trip?.id ?? null, trip !== null) }, '+ 영수증 등록'),
+        receiptRegistrationActions(trip?.id ?? null, () => rememberTravelPosition(page)),
       ),
       !trip ? el('p', { class: 'field-hint', text: '여행에 지정하기 전에는 지출·통계에서 제외되며 전체 CSV에는 포함됩니다.' }) : null,
       summary?.pending ? el('p', { class: 'stat-note', text: `환산 대기 ${summary.pending}장은 합계에서 빠져 있습니다. 영수증 수정 화면에서 환율을 입력하거나 조회하세요.` }) : null,
       receipts.length ? el('div', { class: 'card-list' }, ...receipts.map(receipt => receiptRow(receipt, trip?.currency ?? null,
         () => rememberTravelPosition(page, receipt.id)))) : emptyState('아직 영수증이 없습니다.'),
     ),
-    registration.element,
   );
   return page;
 }

@@ -8,7 +8,6 @@ export interface ExchangeField {
   readonly element: HTMLElement;
   rates(): readonly ExchangeRate[];
   validate(): string | null;
-  setTarget(currency: string | null): void;
 }
 
 export function createExchangeField(
@@ -107,15 +106,6 @@ export function createExchangeField(
 
   return {
     element,
-    setTarget: currency => {
-      if (currency === target) return;
-      if (draft) {
-        const index = histories.findIndex(rate => validRate(rate, draft!.from, draft!.to, draft!.requestedDate));
-        if (index >= 0) histories.splice(index, 1);
-        histories.push(draft);
-      }
-      target = currency; currentKey = ''; void refresh();
-    },
     validate: () => !element.hidden && manual && (input.validity.badInput ||
       (input.value !== '' && (!Number.isFinite(input.valueAsNumber) || input.valueAsNumber <= 0)))
       ? '환율은 0보다 큰 숫자로 입력하세요.' : null,

@@ -43,9 +43,7 @@ export async function renderHome(): Promise<HTMLElement> {
     );
     const bodyId = `travel-receipts-${key}`;
     const body = el('div', { class: 'travel-group-body', id: bodyId, hidden: !openTravelGroups.has(key) },
-      el('div', { class: 'btn-row travel-receipt-actions' }, el('button', { class: 'btn', type: 'button',
-        onclick: () => registration.open(trip?.id ?? null, trip !== null) }, '+ 영수증 등록')),
-      !trip ? el('p', { class: 'field-hint', text: '여행에 지정하기 전에는 지출·통계에서 제외되며, 전체 CSV에는 포함됩니다.' }) : null,
+      !trip ? el('p', { class: 'travel-unassigned-note', text: '* 여행에 지정하기 전에는 지출·통계에서 제외되며, 전체 CSV에는 포함됩니다.' }) : null,
       summary?.pending ? el('p', { class: 'stat-note', text: `환산 대기 ${summary.pending}장은 합계에서 빠져 있습니다. 영수증 수정 화면에서 환율을 입력하거나 조회하세요.` }) : null,
       rows.length ? el('div', { class: 'card-list' }, ...rows.map(receipt => receiptRow(receipt, trip?.currency ?? null,
         () => rememberTravelPosition(page, receipt.id)))) : emptyState('아직 영수증이 없습니다.'),

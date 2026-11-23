@@ -5,7 +5,7 @@ export function registrationGuide(): HTMLElement {
   return el('aside', { class: 'registration-guide registration-hover-guide', 'aria-label': '영수증 등록·검수 안내' },
     el('p', { class: 'registration-flow' },
       el('strong', { class: 'registration-flow-label', text: '이용 순서' }),
-      el('span', { class: 'registration-flow-steps', text: '영수증 등록 → 여행·입력 방식 선택 → 내용 확인·저장 → 통계' }),
+      el('span', { class: 'registration-flow-steps', text: '여행 확인 → 사진으로 등록 또는 직접 입력 → 내용 확인·저장 → 통계' }),
     ),
     el('div', { class: 'registration-help' },
       el('button', {
@@ -18,7 +18,7 @@ export function registrationGuide(): HTMLElement {
         el('dl', { class: 'guide-status-list' },
           el('div', { class: 'guide-status-row' },
             el('dt', {}, el('span', { class: 'badge guide-status-tag', text: '여행 미지정' })),
-            el('dd', { text: '여행을 정하기 전에도 영수증을 보관할 수 있습니다. 여행에 지정하기 전에는 지출·통계에서 제외되며 전체 CSV에는 포함됩니다.' }),
+            el('dd', { text: '여행을 정하기 전에도 영수증을 보관할 수 있습니다. 영수증 상세의 ‘여행 지정’에서 소속을 정할 수 있습니다. 지정 전에는 지출·통계에서 제외되며 전체 CSV에는 포함됩니다.' }),
           ),
           el('div', { class: 'guide-status-row' },
             el('dt', {}, el('span', { class: 'status status-pending guide-status-tag', text: '인식 대기' })),
