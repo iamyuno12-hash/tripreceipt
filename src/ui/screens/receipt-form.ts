@@ -7,6 +7,7 @@
  * 교차검증이 왜 필요한지 사용자가 눈으로 바로 알 수 있게 하려는 의도다.
  */
 import { el, pageHeader } from '../dom.ts';
+import { showMessage } from '../message-dialog.ts';
 import { field, selectField, readForm, errorBox, CURRENCIES } from '../form.ts';
 import { money } from '../format.ts';
 import { createTaxField } from '../tax-field.ts';
@@ -420,12 +421,16 @@ const total = amounts
   const canApply = !!(ocrMerchant || ocrDateTime || parsedItems.length || ocrAmounts.total !== null);
   const ocrMessage = el('span', { class: 'field-hint', role: 'status' });
   const ocrButton = el('button', { class: 'btn', type: 'button', 'data-action': 'apply-ocr',
-    onclick: () => {
+    onclick: async () => {
       const hasInput = !!((ocrMerchant && merchantInput.value.trim()) ||
         (parsedItems.length && rows.some(row => row.name.trim() || row.amount !== 0 || row.unitPrice !== null || row.quantity !== 1)) ||
         (ocrAmounts.total !== null && num(totalInput.value) !== 0) ||
         (ocrDateTime && dateInput.value && (existing?.merchant || existing?.items.length || existing?.total || new Date(dateInput.value).getTime() !== new Date(purchasedAt).getTime())));
-      if (hasInput && !confirm('현재 입력한 상호·결제 일시·품목·총액 중 OCR로 추출된 항목을 바꿀까요? 기존 입력을 덮어쓰며, 저장을 눌러야 적용됩니다.')) return;
+      if (hasInput && !(await showMessage(ocrButton, {
+        title: 'OCR 결과 반영',
+        message: '현재 입력한 상호·결제 일시·품목·총액 중 OCR로 추출된 항목을 바꿀까요? 기존 입력을 덮어쓰며, 저장을 눌러야 적용됩니다.',
+        action: { label: '반영' },
+      }))) return;
       if (ocrMerchant) merchantInput.value = ocrMerchant;
       if (ocrDateTime) dateInput.value = ocrDateTime;
       if (ocrAmounts.total !== null) {
@@ -467,8 +472,9 @@ const total = amounts
       return;
     }
     if (!Number.isFinite(totalInput.valueAsNumber) || totalInput.valueAsNumber <= 0) {
-      alert('영수증 총액은 0보다 큰 금액으로 입력하세요.');
-      totalInput.focus();
+      void showMessage(totalInput, {
+        title: '영수증 총액 확인', message: '영수증 총액은 0보다 큰 금액으로 입력하세요.',
+      });
       return;
     }
     const taxError = taxField.validate();

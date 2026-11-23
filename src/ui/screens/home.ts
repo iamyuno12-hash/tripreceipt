@@ -51,7 +51,7 @@ export async function renderHome(): Promise<HTMLElement> {
         () => rememberTravelPosition(page, receipt.id)))) : emptyState('아직 영수증이 없습니다.'),
     );
     const arrow = el('span', { 'aria-hidden': 'true', text: body.hidden ? '▸' : '▾' });
-    const toggle = el('button', { class: 'badge travel-receipt-toggle', type: 'button',
+    const toggle = el('button', { class: 'travel-receipt-toggle', type: 'button',
       'aria-expanded': String(!body.hidden), 'aria-controls': bodyId }, `영수증 ${rows.length}장 `, arrow);
     toggle.addEventListener('click', () => {
       body.hidden = !body.hidden;
@@ -60,21 +60,25 @@ export async function renderHome(): Promise<HTMLElement> {
       if (body.hidden) openTravelGroups.delete(key); else openTravelGroups.add(key);
     });
     return el('article', { class: `travel-group${trip ? '' : ' travel-unassigned'}`, 'data-travel-group': key },
-      el('div', { class: 'trip-overview travel-summary' },
+      el('div', { class: 'travel-summary' },
         el('a', { class: 'travel-detail-link', href: `#${travelPath(trip?.id ?? null)}`,
           'aria-label': `${trip?.name ?? '여행 미지정'} 상세 보기`, onclick: () => rememberTravelPosition(page) }),
-        el('div', { class: 'travel-group-title' },
-          el('h2', { class: 'trip-name', text: trip?.name ?? '여행 미지정' }),
-          el('p', { class: 'trip-meta', text: trip ? `${trip.destination} · ${dateRange(trip.startDate, trip.endDate)}`
-            : '여행을 지정하기 전까지 보관하는 영수증입니다.' }),
-          el('div', { class: 'badges' }, toggle,
+        el('div', { class: 'trip-head' },
+          el('h2', { class: 'trip-name' }, trip?.name ?? '여행 미지정',
+            el('span', { class: 'travel-detail-arrow', 'aria-hidden': 'true', text: '›' })),
+          trip && summary ? el('span', { class: 'trip-amount', text: expenseText(summary, trip.currency) }) : null,
+        ),
+        el('p', { class: 'trip-meta', text: trip ? `${trip.destination} · ${dateRange(trip.startDate, trip.endDate)}`
+          : '여행을 지정하기 전까지 보관하는 영수증입니다.' }),
+        el('div', { class: 'travel-card-footer' },
+          el('div', { class: 'travel-receipt-meta' }, toggle,
             review ? el('span', { class: 'badge warn', text: `검수 필요 ${review}장` }) : null,
             pending ? el('span', { class: 'badge', text: `인식 대기 ${pending}장` }) : null,
             summary?.pending ? el('span', { class: 'badge warn', text: `환산 대기 ${summary.pending}장` }) : null,
-          ), error,
+          ),
+          trip ? actions : null,
         ),
-        el('div', { class: 'travel-group-side' }, actions,
-          trip && summary ? el('span', { class: 'trip-amount', text: expenseText(summary, trip.currency) }) : null),
+        error,
       ), body,
     );
   }

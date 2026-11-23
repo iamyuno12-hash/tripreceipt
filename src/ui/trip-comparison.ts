@@ -38,7 +38,6 @@ export function renderTravelStatistics(
   const section = el('section', { class: 'stat-section stats-panel stats-travel-panel', 'aria-labelledby': 'stats-travel-title' },
     el('header', { class: 'stats-panel-header' },
       el('h2', { class: 'section-title stats-panel-title', id: 'stats-travel-title', text: '여행별 지출' }),
-      el('p', { class: 'stats-panel-purpose', text: '여행을 골라 전체 지출과 분류별 구성을 함께 확인합니다.' }),
     ),
   );
   const summaries = trips.map(trip => ({
@@ -74,7 +73,7 @@ export function renderTravelStatistics(
     role: 'region', 'aria-label': '여행 간 지출 비교 결과', tabindex: 0 });
   const categories = el('div', { class: 'stats-categories-content' });
   const sharedResults = el('div', { id: 'stats-travel-results' },
-    el('section', { class: 'stats-comparison-card', 'aria-labelledby': 'stats-comparison-title' },
+    el('section', { class: 'stats-comparison-card', 'data-chart': 'comparison', 'aria-labelledby': 'stats-comparison-title' },
       el('header', { class: 'stats-panel-header' },
         el('h3', { class: 'section-title stats-panel-title', id: 'stats-comparison-title', tabindex: -1,
           text: '여행 간 지출 비교' }),
@@ -124,7 +123,7 @@ export function renderTravelStatistics(
       const sorted = [...rows].sort((a, b) => b.summary.total - a.summary.total);
       const max = Math.max(1, ...sorted.map(row => Math.max(0, row.summary.total)));
       return el('div', { class: 'stats-comparison-group' },
-        el('h4', { class: 'stats-comparison-currency', text: `${currency} 기준` }),
+        el('h4', { class: 'stats-chart-currency', text: `${currency} 기준` }),
         ...sorted.map(({ trip, summary }) => el('div', { class: 'stats-comparison-item', 'data-trip-id': trip.id },
           el('div', { class: 'stat-head' },
             el('div', { class: 'stats-comparison-name' },
@@ -165,7 +164,6 @@ export function renderTravelStatistics(
   });
   search.addEventListener('input', () => { filters.query = search.value; drawResults(); });
   section.append(
-    el('p', { class: 'stat-note', text: '분류 합계는 검수 필요를 뺀 품목 금액, 영수증 총액은 검수 필요를 포함한 총액이므로 서로 다를 수 있습니다.' }),
     el('div', { class: 'stats-travel-controls' }, periodField, dateFields, searchField, reset),
     periodError, status, sharedResults,
   );

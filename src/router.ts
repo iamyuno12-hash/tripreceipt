@@ -16,7 +16,8 @@ export interface Route {
    * 저장소에서 읽어야 하는 화면은 Promise 를 돌려줘도 된다 (P2 에서 추가).
    */
   readonly render: (params: Record<string, string>) => HTMLElement | Promise<HTMLElement>;
-  readonly afterRender?: (node: HTMLElement) => void;
+  /** 화면을 떠날 때 정리할 작업이 있으면 콜백을 반환한다. */
+  readonly afterRender?: (node: HTMLElement) => void | (() => void);
 }
 
 export interface MatchedRoute {
@@ -91,6 +92,7 @@ export class Router {
    * 저장소 읽기가 비동기라 빠르게 탭을 옮기면 순서가 뒤집힐 수 있다.
    */
   private renderToken = 0;
+  private disposeView: (() => void) | undefined;
 
   private render(): void {
     const path = currentPath();
@@ -104,6 +106,8 @@ export class Router {
     }
     matched ??= this.match('/');
 
+    this.disposeView?.();
+    this.disposeView = undefined;
     this.outlet.replaceChildren();
 
     if (!matched) {
@@ -138,7 +142,7 @@ export class Router {
           if (token !== this.renderToken) return; // 그 사이 다른 화면으로 이동함
           this.outlet.replaceChildren(node);
           this.scrollTop();
-          found.route.afterRender?.(node);
+          this.disposeView = found.route.afterRender?.(node) ?? undefined;
         },
         (err: unknown) => {
           if (token !== this.renderToken) return;
@@ -150,7 +154,7 @@ export class Router {
 
     this.outlet.replaceChildren(result);
     this.scrollTop();
-    found.route.afterRender?.(result);
+    this.disposeView = found.route.afterRender?.(result) ?? undefined;
   }
 
   private scrollTop(): void {

@@ -1,5 +1,6 @@
 /** 설정 화면. 저장 상태 확인과 데이터 관리. */
 import { el, pageHeader } from '../dom.ts';
+import { showMessage } from '../message-dialog.ts';
 import { DETECTION_MODEL, RECOGNITION_MODELS, totalModelMB } from '../../ocr/models.ts';
 import { clearAll, usage } from '../../storage/db.ts';
 import { isSampleLoaded } from '../../storage/meta.ts';
@@ -114,9 +115,22 @@ export async function renderSettings(): Promise<HTMLElement> {
       el('p', { class: 'field-hint',
         text: '여행·영수증·사진이 모두 지워집니다. 백엔드가 없어 되돌릴 수 없습니다.' }),
       el('button', { class: 'btn danger', type: 'button',
-        onclick: () => {
-          if (!confirm('모든 데이터를 삭제할까요? 되돌릴 수 없습니다.')) return;
-          void clearAll().then(reload);
+        onclick: async event => {
+          const button = event.currentTarget as HTMLButtonElement;
+          if (button.disabled || !(await showMessage(button, {
+            title: '전체 삭제', message: '모든 데이터를 삭제할까요? 되돌릴 수 없습니다.',
+            action: { label: '전체 삭제', danger: true },
+          }))) return;
+          button.disabled = true;
+          try {
+            await clearAll();
+            reload();
+          } catch (error) {
+            button.disabled = false;
+            void showMessage(button, {
+              title: '데이터 삭제 실패', message: error instanceof Error ? error.message : String(error),
+            });
+          }
         } }, '전체 삭제'),
     ),
 

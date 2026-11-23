@@ -5,7 +5,7 @@ import { renderHome } from './ui/screens/home.ts';
 import { renderTrip, renderUnassigned } from './ui/screens/trip.ts';
 import { renderScan } from './ui/screens/scan.ts';
 import { renderReceipt } from './ui/screens/receipt.ts';
-import { renderStats } from './ui/screens/stats.ts';
+import { renderStats, watchStatsSections } from './ui/screens/stats.ts';
 import { renderSettings } from './ui/screens/settings.ts';
 import { renderTripForm } from './ui/screens/trip-form.ts';
 import { renderReceiptForm } from './ui/screens/receipt-form.ts';
@@ -25,7 +25,7 @@ const ROUTES: readonly Route[] = [
   { name: 'trip', path: '/trips/:id', render: renderTrip, afterRender: restoreTravelPosition },
   { name: 'scan', path: '/scan', render: renderScan },
   { name: 'receipt', path: '/receipts/:id', render: renderReceipt },
-  { name: 'stats', path: '/stats', render: renderStats },
+  { name: 'stats', path: '/stats', render: renderStats, afterRender: watchStatsSections },
   { name: 'settings', path: '/settings', render: renderSettings },
   { name: 'env', path: '/settings/env', render: renderEnv },
   { name: 'ocr-test', path: '/settings/ocr-test', render: renderOcrTest },

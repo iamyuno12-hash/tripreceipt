@@ -16,6 +16,71 @@ import { CURRENCIES, selectField } from '../form.ts';
 import { renderMonthlyChart } from '../monthly-chart.ts';
 import { renderTravelStatistics, type TravelFilters } from '../trip-comparison.ts';
 
+const STATS_JUMP_GAP = 16;
+
+function markCurrentSection(navigation: HTMLElement, chart: string | undefined): void {
+  for (const button of navigation.querySelectorAll<HTMLButtonElement>('.stats-jump-link')) {
+    if (button.dataset.chart === chart) {
+      if (!button.hasAttribute('aria-current')) button.setAttribute('aria-current', 'location');
+    } else button.removeAttribute('aria-current');
+  }
+}
+
+function visibleSection(results: HTMLElement, navigationBottom: number): string | undefined {
+  const viewportBottom = window.innerHeight;
+  const atPageEnd = window.scrollY > 0 &&
+    window.scrollY + viewportBottom >= document.documentElement.scrollHeight - 1;
+  let chart: string | undefined;
+  for (const section of results.querySelectorAll<HTMLElement>('section[data-chart]')) {
+    const { top, bottom } = section.getBoundingClientRect();
+    if (bottom <= navigationBottom || top >= viewportBottom) continue;
+    // 마지막 섹션이 짧으면 바로가기 아래까지 올라오지 못해도 현재 영역으로 표시한다.
+    if (atPageEnd || top <= navigationBottom + STATS_JUMP_GAP || chart === undefined) chart = section.dataset.chart;
+  }
+  return chart;
+}
+
+export function watchStatsSections(page: HTMLElement): (() => void) | undefined {
+  const navigation = page.querySelector<HTMLElement>('.stats-jump');
+  const results = page.querySelector<HTMLElement>('#stats-results');
+  if (!navigation || !results) return;
+
+  let frame: number | undefined;
+  let focusChanged = false;
+  const update = (): void => {
+    frame = undefined;
+    const focusedChart = focusChanged && results.contains(document.activeElement)
+      ? document.activeElement?.closest<HTMLElement>('section[data-chart]')?.dataset.chart
+      : undefined;
+    markCurrentSection(navigation, focusedChart ?? visibleSection(results, navigation.getBoundingClientRect().bottom));
+    focusChanged = false;
+  };
+  const schedule = (): void => {
+    frame ??= window.requestAnimationFrame(update);
+  };
+  const handleFocus = (): void => {
+    // 초점 이동 때문에 스크롤이 함께 일어나면 이 프레임에서는 초점이 들어간 영역을 우선한다.
+    focusChanged = true;
+    schedule();
+  };
+
+  const resize = new ResizeObserver(schedule);
+  resize.observe(navigation);
+  resize.observe(results);
+  window.addEventListener('scroll', schedule, { passive: true });
+  window.addEventListener('resize', schedule);
+  results.addEventListener('focusin', handleFocus);
+  update();
+
+  return () => {
+    resize.disconnect();
+    window.removeEventListener('scroll', schedule);
+    window.removeEventListener('resize', schedule);
+    results.removeEventListener('focusin', handleFocus);
+    if (frame !== undefined) window.cancelAnimationFrame(frame);
+  };
+}
+
 /** 화면별 금액의 의미와 상태별 제외 기준은 이 안내 한 곳에서 설명한다. */
 function statisticsGuide(): HTMLElement {
   return el('div', { class: 'registration-help stats-help' },
@@ -53,13 +118,13 @@ function statisticsGuide(): HTMLElement {
   );
 }
 
-function statisticsHeader(): HTMLElement {
+function statisticsHeader(trips: readonly Trip[], receipts: readonly Receipt[]): HTMLElement {
   const header = pageHeader('통계');
   header.append(el('div', { class: 'stats-intro' },
     el('p', { class: 'subtitle', text: '월별 지출의 흐름과 여행별·카테고리별 지출을 확인합니다.' }),
     statisticsGuide(),
   ));
-  return header;
+  return el('div', { class: 'stats-heading' }, header, exportAction(trips, receipts));
 }
 
 /** 모든 여행의 검수 완료된 영수증을 모아, 최근 1년 월별 지출을 통화별로 표시한다. */
@@ -80,7 +145,7 @@ function renderOverallTrend(trips: readonly Trip[], receipts: readonly Receipt[]
   });
   const pending = trips.reduce((n, trip) => n + summarizeExpenses(inRange.filter(r => r.tripId === trip.id), trip.currency).pending, 0);
 
-  return el('section', { class: 'stat-section stats-panel', 'aria-labelledby': 'stats-trend-title' },
+  return el('section', { class: 'stat-section stats-panel', 'data-chart': 'trend', 'aria-labelledby': 'stats-trend-title' },
     el('header', { class: 'stats-panel-header' },
       el('h2', { class: 'section-title stats-panel-title', id: 'stats-trend-title', tabindex: -1,
         text: '월별 지출 추이' }),
@@ -92,8 +157,8 @@ function renderOverallTrend(trips: readonly Trip[], receipts: readonly Receipt[]
       : el('div', {},
           ...currencies.map(currency => {
             const points = expensesByMonth(trips, eligible, currency, today);
-            return el('div', { style: 'margin-top:20px' },
-              el('h3', { text: `${currency} 기준`, style: 'font-size:0.94rem;margin:0 0 10px' }),
+            return el('div', { class: 'stats-monthly-group' },
+              el('h3', { class: 'stats-chart-currency', text: `${currency} 기준` }),
               renderMonthlyChart(points, currency),
             );
           }),
@@ -152,7 +217,7 @@ function renderTripStatistics(trip: Trip, receipts: readonly Receipt[]): HTMLEle
       : el('div', { class: 'bars' }, ...rows),
     el('div', { class: 'btn-row' },
       el('button', {
-        class: 'btn', type: 'button',
+        class: 'btn tiny', type: 'button',
         onclick: () => downloadCsv(
           buildExpenseCsv([trip], receipts), `tripreceipt-${trip.id}.csv`,
         ),
@@ -162,11 +227,11 @@ function renderTripStatistics(trip: Trip, receipts: readonly Receipt[]): HTMLEle
 }
 
 function renderTripCategories(trips: readonly Trip[], byTrip: ReadonlyMap<string, Receipt[]>): HTMLElement {
-  return el('section', { class: 'stats-categories', 'aria-labelledby': 'stats-categories-title' },
+  return el('section', { class: 'stats-categories', 'data-chart': 'categories', 'aria-labelledby': 'stats-categories-title' },
     el('header', { class: 'stats-panel-header' },
       el('h3', { class: 'section-title stats-panel-title', id: 'stats-categories-title', tabindex: -1,
         text: '여행별 지출 구성' }),
-      el('p', { class: 'stats-panel-purpose', text: '각 여행 안에서 분류별로 얼마를 썼는지 살펴봅니다.' }),
+      el('p', { class: 'stats-panel-purpose', text: '분류 합계는 검수 필요를 뺀 품목 금액, 영수증 총액은 검수 필요를 포함한 총액이므로 서로 다를 수 있습니다.' }),
     ),
     trips.length === 0
       ? emptyState('조건에 맞는 여행이 없습니다.', '기간을 바꾸거나 여행 이름을 지워 보세요.')
@@ -178,11 +243,11 @@ function renderTripCategories(trips: readonly Trip[], byTrip: ReadonlyMap<string
 
 function exportAction(trips: readonly Trip[], receipts: readonly Receipt[]): HTMLElement {
   return el('div', { class: 'stats-export' },
-    el('button', { class: 'btn primary', type: 'button',
+    el('button', { class: 'btn stats-export-button', type: 'button', 'aria-describedby': 'stats-export-note',
       onclick: () => downloadCsv(buildExpenseCsv(trips, receipts), 'tripreceipt-all.csv'),
     }, '전체 CSV 내보내기'),
-    el('p', { class: 'stats-export-note',
-      text: '전체 CSV는 통화·기간·검색 조건과 관계없이 모든 여행·미지정 영수증을 포함합니다. 사진은 포함되지 않습니다.' }),
+    el('p', { class: 'stats-export-note', id: 'stats-export-note',
+      text: '필터와 관계없이 모든 여행·미지정 영수증을 내보냅니다. 사진은 제외됩니다.' }),
   );
 }
 
@@ -195,8 +260,7 @@ export async function renderStats(): Promise<HTMLElement> {
 
   if (trips.length === 0) {
     return el('div', { class: 'stats-page' },
-      statisticsHeader(),
-      exportAction(trips, all),
+      statisticsHeader(trips, all),
       unassignedNote,
       emptyState('집계할 여행이 없습니다.', '여행 미지정 영수증은 여행에 지정한 뒤 통계에 포함됩니다.'),
       el('a', { class: 'btn', href: '#/' }, '여행으로 이동'),
@@ -226,8 +290,10 @@ export async function renderStats(): Promise<HTMLElement> {
   select.setAttribute('aria-controls', 'stats-results');
   filter.querySelector('label')!.appendChild(el('span', { class: 'stats-currency-hint', id: 'stats-currency-hint',
     text: '여행의 집계 기준 통화로 구분합니다.' }));
-  const selectionStatus = el('p', { class: 'stat-note stats-selection-status', role: 'status', 'aria-live': 'polite' });
-  filter.appendChild(selectionStatus);
+  const selectionStatus = el('p', { class: 'stats-selection-status', role: 'status', 'aria-live': 'polite' });
+  const scope = el('div', { class: 'stats-scope' }, filter,
+    el('div', { class: 'stats-scope-summary' }, selectionStatus, unassignedNote),
+  );
   const results = el('div', { id: 'stats-results' });
   const travelFilters: TravelFilters = { period: 'year', query: '' };
 
@@ -248,13 +314,13 @@ export async function renderStats(): Promise<HTMLElement> {
 
   const page = el('div', { class: 'stats-page' });
   const navigation = el('nav', { class: 'stats-jump', 'aria-label': '통계 영역 바로가기' },
-    el('span', { class: 'stats-jump-label', text: '바로가기' }),
-    ...[
-      ['stats-trend-title', '월별 추이'],
-      ['stats-comparison-title', '여행 비교'],
-      ['stats-categories-title', '여행별 지출 구성'],
-    ].map(([id, label]) => el('button', {
-      class: 'btn tiny', type: 'button', 'aria-controls': id, 'aria-label': `${label} 영역으로 이동`,
+    el('span', { class: 'stats-jump-label', 'aria-hidden': 'true', text: '바로가기' }),
+    el('div', { class: 'stats-jump-links' }, ...[
+      ['stats-trend-title', '월별 추이', 'trend'],
+      ['stats-comparison-title', '여행 비교', 'comparison'],
+      ['stats-categories-title', '여행별 지출 구성', 'categories'],
+    ].map(([id, label, chart]) => el('button', {
+      class: 'stats-jump-link', type: 'button', 'data-chart': chart, 'aria-controls': id, 'aria-label': `${label} 영역으로 이동`,
       onclick: () => {
         // 해시 라우터의 주소와 통화 선택은 유지한 채 해당 영역으로 이동한다.
         const heading = page.querySelector<HTMLElement>(`#${id}`);
@@ -262,18 +328,17 @@ export async function renderStats(): Promise<HTMLElement> {
         const section = heading.closest('section');
         if (!section) return;
         // 좁은 화면에서 바로가기 행이 줄바꿈되어도 제목을 가리지 않는다.
-        section.style.scrollMarginTop = `${navigation.getBoundingClientRect().height + 16}px`;
+        section.style.scrollMarginTop = `${navigation.getBoundingClientRect().height + STATS_JUMP_GAP}px`;
         section.scrollIntoView({ block: 'start' });
         heading.focus({ preventScroll: true });
+        markCurrentSection(navigation, chart);
       },
-    }, label)),
+    }, label))),
   );
 
   page.append(
-    statisticsHeader(),
-    exportAction(trips, all),
-    ...(unassignedNote ? [unassignedNote] : []),
-    filter,
+    statisticsHeader(trips, all),
+    scope,
     navigation,
     results,
   );
