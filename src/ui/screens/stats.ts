@@ -18,9 +18,12 @@ import { renderTravelStatistics, type TravelFilters } from '../trip-comparison.t
 
 /** 화면별 금액의 의미와 상태별 제외 기준은 이 안내 한 곳에서 설명한다. */
 function statisticsGuide(): HTMLElement {
-  return el('aside', { class: 'registration-guide stats-accounting-guide', 'aria-label': '통계 집계 기준' },
-    el('details', {},
-      el('summary', { text: '통계 집계 기준' }),
+  return el('div', { class: 'registration-help stats-help' },
+    el('button', { class: 'registration-help-trigger', type: 'button', text: '?',
+      'aria-label': '통계 집계 기준', 'aria-describedby': 'stats-accounting-tooltip' }),
+    el('aside', { class: 'registration-guide registration-tooltip stats-accounting-guide',
+      id: 'stats-accounting-tooltip', role: 'tooltip' },
+      el('strong', { text: '통계 집계 기준' }),
       el('p', { class: 'stats-accounting-intro',
         text: '월별 추이·여행 비교는 영수증 총액, 분류별 구성은 품목 금액을 합산합니다. 금액은 각 여행의 기준 통화로 환산하며, 기준 통화가 다른 여행끼리는 합산하지 않습니다.' }),
       el('dl', { class: 'guide-status-list' },
@@ -48,6 +51,15 @@ function statisticsGuide(): HTMLElement {
         text: '분류 비율은 분류 합계 기준입니다. 확인된 영수증도 품목 합계와 총액이 다르면 두 합계는 다를 수 있습니다.' }),
     ),
   );
+}
+
+function statisticsHeader(): HTMLElement {
+  const header = pageHeader('통계');
+  header.append(el('div', { class: 'stats-intro' },
+    el('p', { class: 'subtitle', text: '월별 지출의 흐름과 여행별·카테고리별 지출을 확인합니다.' }),
+    statisticsGuide(),
+  ));
+  return header;
 }
 
 /** 모든 여행의 검수 완료된 영수증을 모아, 최근 1년 월별 지출을 통화별로 표시한다. */
@@ -177,11 +189,15 @@ function exportAction(trips: readonly Trip[], receipts: readonly Receipt[]): HTM
 export async function renderStats(): Promise<HTMLElement> {
   const [trips, saved] = await Promise.all([listTrips(), listAllReceipts()]);
   const all = await prepareExchangeRates(trips, saved);
+  const unassignedCount = all.filter(receipt => receipt.tripId === null).length;
+  const unassignedNote = unassignedCount ? el('p', { class: 'stat-note stats-unassigned-note',
+    text: `* 여행 미지정 ${unassignedCount}장은 여행에 지정하기 전까지 통계에서 제외됩니다.` }) : null;
 
   if (trips.length === 0) {
     return el('div', { class: 'stats-page' },
-      pageHeader('통계'),
+      statisticsHeader(),
       exportAction(trips, all),
+      unassignedNote,
       emptyState('집계할 여행이 없습니다.', '여행 미지정 영수증은 여행에 지정한 뒤 통계에 포함됩니다.'),
       el('a', { class: 'btn', href: '#/' }, '여행으로 이동'),
     );
@@ -208,9 +224,10 @@ export async function renderStats(): Promise<HTMLElement> {
   const select = filter.querySelector<HTMLSelectElement>('select')!;
   select.setAttribute('aria-describedby', 'stats-currency-hint');
   select.setAttribute('aria-controls', 'stats-results');
-  filter.appendChild(el('span', { class: 'field-hint', id: 'stats-currency-hint',
+  filter.querySelector('label')!.appendChild(el('span', { class: 'stats-currency-hint', id: 'stats-currency-hint',
     text: '여행의 집계 기준 통화로 구분합니다.' }));
-  const selectionStatus = el('p', { class: 'stat-note', role: 'status', 'aria-live': 'polite' });
+  const selectionStatus = el('p', { class: 'stat-note stats-selection-status', role: 'status', 'aria-live': 'polite' });
+  filter.appendChild(selectionStatus);
   const results = el('div', { id: 'stats-results' });
   const travelFilters: TravelFilters = { period: 'year', query: '' };
 
@@ -253,15 +270,10 @@ export async function renderStats(): Promise<HTMLElement> {
   );
 
   page.append(
-    pageHeader('통계', '월별 지출의 흐름과 여행별·카테고리별 지출을 확인합니다.'),
+    statisticsHeader(),
     exportAction(trips, all),
-    ...(all.some(receipt => receipt.tripId === null)
-      ? [el('p', { class: 'stat-note' },
-          el('a', { class: 'inline-link', href: '#/unassigned' }, `여행 미지정 ${all.filter(receipt => receipt.tripId === null).length}장`),
-          '은 여행에 지정하기 전까지 통계에서 제외됩니다.')] : []),
+    ...(unassignedNote ? [unassignedNote] : []),
     filter,
-    selectionStatus,
-    statisticsGuide(),
     navigation,
     results,
   );

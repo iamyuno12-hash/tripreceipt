@@ -12,7 +12,7 @@ import { money } from '../format.ts';
 import { createTaxField } from '../tax-field.ts';
 import { createReceiptImage } from '../receipt-image.ts';
 import { createExchangeField } from '../exchange-field.ts';
-import { currencyDigits } from '../../currency.ts';
+import { currencyDigits, sumMoney } from '../../currency.ts';
 import { CATEGORIES, amountTolerance, type Category } from '../../types.ts';
 import { listTrips } from '../../storage/trips.ts';
 import {
@@ -182,7 +182,9 @@ const amounts = fillFromOcr
 
 const total = amounts
   ? amounts.total
-  : existing?.total ?? 0;
+  : existing?.status === 'pending' && existing.items.length === 0 && existing.total === 0
+    ? null
+    : existing?.total ?? null;
 
   const currency = existing?.currency ?? trip?.currency ?? (CURRENCIES.some(([code]) => code === params['currency']) ? params['currency']! : 'KRW');
   const tripField = selectField('여행', 'receiptTrip', [['', '여행 미지정'], ...trips.map(t => [t.id, t.name] as const)], tripId ?? '');
@@ -210,14 +212,29 @@ const total = amounts
   const currencyInput = currencyField.querySelector<HTMLSelectElement>('select')!;
   const taxField = createTaxField(totalInput, currencyInput, existing?.tax ?? null);
   let refreshOcr = (): void => {};
+  let totalFromItems = total === null;
+  let updatingTotal = false;
+
+  function notifyTotalChange(): void {
+    updatingTotal = true;
+    try { totalInput.dispatchEvent(new Event('input', { bubbles: true })); }
+    finally { updatingTotal = false; }
+  }
 
   function itemsSum(): number {
-    return rows.reduce((s, r) => s + r.amount, 0);
+    return sumMoney(rows.map(row => row.amount), currencyInput.value);
   }
 
   function refreshBalance(): void {
     const sum = itemsSum();
     const currency = currencyInput.value;
+    if (totalFromItems) {
+      const next = rows.some(row => row.name.trim() || row.amount !== 0) ? String(sum) : '';
+      if (totalInput.value !== next) {
+        totalInput.value = next;
+        notifyTotalChange();
+      }
+    }
     if (!totalInput.value || (num(totalInput.value) === 0 && !rows.some(row => row.name.trim() || row.amount > 0))) {
       balance.className = 'balance warn';
       balance.replaceChildren(
@@ -262,7 +279,7 @@ const total = amounts
         return el('tr', {},
           el('td', {},
             el('input', { class: 'input tight', value: row.name, placeholder: '품목명',
-              oninput: (e: Event) => { row.name = (e.target as HTMLInputElement).value; } }),
+              oninput: (e: Event) => { row.name = (e.target as HTMLInputElement).value; refreshBalance(); } }),
           ),
           el('td', { class: 'num' },
             el('input', { class: 'input tight qty', type: 'number', min: '1',
@@ -315,12 +332,15 @@ const total = amounts
         );
       }),
     );
+    refreshBalance();
     refreshOcr();
   }
 
   drawRows();
-  refreshBalance();
-  totalInput.addEventListener('input', refreshBalance);
+  totalInput.addEventListener('input', () => {
+    if (!updatingTotal) totalFromItems = totalInput.value === '' && !totalInput.validity.badInput;
+    refreshBalance();
+  });
   currencyInput.addEventListener('change', refreshBalance);
 
   const form = el('form', { class: 'form', novalidate: 'true' },
@@ -366,7 +386,7 @@ const total = amounts
     el('div', { class: 'field' },
       el('label', { class: 'field-label', for: 'f-total', text: '영수증 총액' }),
       totalInput,
-      el('span', { class: 'field-hint', text: '영수증에 찍힌 금액을 그대로 입력하세요.' }),
+      el('span', { class: 'field-hint', text: '비워 두면 품목 합계로 채워집니다. 직접 입력한 총액은 유지되며, 총액을 바꿔도 품목 금액은 바뀌지 않습니다.' }),
     ),
     taxField.element,
     amountHints.length > 0 ? el('p', { class: 'field-hint', text: amountHints.join(' · ') }) : null,
@@ -408,9 +428,12 @@ const total = amounts
       if (hasInput && !confirm('현재 입력한 상호·결제 일시·품목·총액 중 OCR로 추출된 항목을 바꿀까요? 기존 입력을 덮어쓰며, 저장을 눌러야 적용됩니다.')) return;
       if (ocrMerchant) merchantInput.value = ocrMerchant;
       if (ocrDateTime) dateInput.value = ocrDateTime;
+      if (ocrAmounts.total !== null) {
+        totalFromItems = false;
+        totalInput.value = String(ocrAmounts.total);
+      }
       if (parsedItems.length) { rows.splice(0, rows.length, ...ocrItemRows()); drawRows(); }
-      if (ocrAmounts.total !== null) totalInput.value = String(ocrAmounts.total);
-      totalInput.dispatchEvent(new Event('input', { bubbles: true }));
+      notifyTotalChange();
       dateInput.dispatchEvent(new Event('input', { bubbles: true }));
       refreshBalance();
       refreshOcr();
@@ -433,6 +456,7 @@ const total = amounts
   form.addEventListener('submit', (ev) => {
     ev.preventDefault();
     errorSlot.replaceChildren();
+    refreshBalance();
     const v = readForm(form);
 
     if (!v['merchant']) { errorSlot.replaceChildren(errorBox('상호를 입력하세요.')); return; }
@@ -442,8 +466,9 @@ const total = amounts
       errorSlot.replaceChildren(errorBox('결제 일시를 입력하세요.'));
       return;
     }
-    if (!v['total']) {
-      errorSlot.replaceChildren(errorBox('영수증 총액을 입력하세요.'));
+    if (!Number.isFinite(totalInput.valueAsNumber) || totalInput.valueAsNumber <= 0) {
+      alert('영수증 총액은 0보다 큰 금액으로 입력하세요.');
+      totalInput.focus();
       return;
     }
     const taxError = taxField.validate();

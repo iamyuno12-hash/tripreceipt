@@ -5,7 +5,7 @@ import { el } from './dom.ts';
 import { CURRENCIES, selectField } from './form.ts';
 
 export function createRegistrationDialog(trips: readonly Trip[], onContinue: () => void): {
-  element: HTMLDialogElement; open(tripId?: string | null): void;
+  element: HTMLDialogElement; open(tripId?: string | null, lockTrip?: boolean): void;
 } {
   const tripField = selectField('여행', 'registerTrip', [['', '여행 미지정'], ...trips.map(t => [t.id, t.name] as const)], '');
   const tripInput = tripField.querySelector<HTMLSelectElement>('select')!;
@@ -49,11 +49,13 @@ export function createRegistrationDialog(trips: readonly Trip[], onContinue: () 
       currency: trip?.currency ?? currency.value, lang: trip ? tripOcrLanguage(trip) : language.value });
     onContinue(); close(); navigate(`${photo ? '/scan' : '/receipts/new'}?${query}`);
   });
-  return { element: dialog, open: (tripId = null) => {
+  return { element: dialog, open: (tripId = null, lockTrip = false) => {
     tripInput.value = tripId ?? ''; currency.value = 'KRW'; language.value = 'korean'; languageTouched = false;
+    tripInput.disabled = lockTrip;
     form.querySelector<HTMLInputElement>('[value="photo"]')!.checked = true;
     draw();
     if (typeof dialog.showModal === 'function') dialog.showModal(); else dialog.setAttribute('open', '');
-    tripInput.focus();
+    if (lockTrip) form.querySelector<HTMLInputElement>('[value="photo"]')!.focus();
+    else tripInput.focus();
   } };
 }
