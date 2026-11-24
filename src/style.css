@@ -642,8 +642,14 @@ td.num, th.num { text-align: right; white-space: nowrap; }
 .stats-comparison-card { margin: 20px 0 24px; padding: 18px 20px; border: 1px solid var(--border); border-radius: 10px; background: color-mix(in srgb, var(--chart-color) 7%, var(--surface)); scroll-margin-top: 24px; }
 .stats-comparison-card .stats-panel-title, .stats-categories .stats-panel-title { font-size: 1.075rem; }
 .stats-categories { scroll-margin-top: 24px; }
-.stats-comparison-results { max-height: 480px; overflow-y: auto; margin-top: 16px; padding-right: 10px; }
-.stats-comparison-results:focus-visible { outline: 2px solid var(--chart-color); outline-offset: 2px; }
+.stats-comparison-results { margin-top: 16px; }
+.stats-page [data-trip-limit] {
+  max-block-size: var(--stats-list-height, none);
+  overflow-y: auto;
+  scrollbar-gutter: stable;
+  padding-inline-end: 10px;
+}
+.stats-comparison-results:focus-visible, .stats-trip-list:focus-visible { outline: 2px solid var(--chart-color); outline-offset: 2px; }
 .stats-comparison-group + .stats-comparison-group { margin-top: 16px; padding-top: 14px; border-top: 1px solid var(--border); }
 .stats-comparison-item { margin-bottom: 16px; }
 .stats-comparison-item:last-child { margin-bottom: 0; }

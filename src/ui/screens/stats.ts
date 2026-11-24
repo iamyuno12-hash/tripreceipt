@@ -17,6 +17,7 @@ import { renderMonthlyChart } from '../monthly-chart.ts';
 import { renderTravelStatistics, type TravelFilters } from '../trip-comparison.ts';
 
 const STATS_JUMP_GAP = 16;
+const CATEGORY_TRIP_LIMIT = 3;
 
 function markCurrentSection(navigation: HTMLElement, chart: string | undefined): void {
   for (const button of navigation.querySelectorAll<HTMLButtonElement>('.stats-jump-link')) {
@@ -64,15 +65,51 @@ export function watchStatsSections(page: HTMLElement): (() => void) | undefined 
     schedule();
   };
 
-  const resize = new ResizeObserver(schedule);
-  resize.observe(navigation);
-  resize.observe(results);
+  const tripLimits = new Map<HTMLElement, HTMLElement>();
+  const fitTripLists = (): void => {
+    for (const [list, lastTrip] of tripLimits) {
+      const height = lastTrip.getBoundingClientRect().bottom - list.getBoundingClientRect().top + list.scrollTop;
+      const limit = `${Math.ceil(height)}px`;
+      if (list.style.getPropertyValue('--stats-list-height') !== limit) {
+        list.style.setProperty('--stats-list-height', limit);
+      }
+    }
+  };
+  const resize = new ResizeObserver(() => {
+    fitTripLists();
+    schedule();
+  });
+  const observeResults = (): void => {
+    tripLimits.clear();
+    resize.disconnect();
+    resize.observe(navigation);
+    resize.observe(results);
+    for (const list of results.querySelectorAll<HTMLElement>('[data-trip-limit]')) {
+      const firstTrips = Array.from(list.querySelectorAll<HTMLElement>('[data-trip-id]'))
+        .slice(0, Number(list.dataset.tripLimit));
+      const lastTrip = firstTrips.at(-1);
+      if (!lastTrip) continue;
+      tripLimits.set(list, lastTrip);
+      resize.observe(list);
+      for (const trip of firstTrips) resize.observe(trip);
+    }
+    fitTripLists();
+  };
+  const content = new window.MutationObserver(changes => {
+    if (!changes.some(({ target }) => target === results ||
+      target instanceof HTMLElement && target.matches('.stats-comparison-results, .stats-categories-content'))) return;
+    observeResults();
+    schedule();
+  });
+  content.observe(results, { childList: true, subtree: true });
+  observeResults();
   window.addEventListener('scroll', schedule, { passive: true });
   window.addEventListener('resize', schedule);
   results.addEventListener('focusin', handleFocus);
   update();
 
   return () => {
+    content.disconnect();
     resize.disconnect();
     window.removeEventListener('scroll', schedule);
     window.removeEventListener('resize', schedule);
@@ -128,12 +165,16 @@ function statisticsHeader(trips: readonly Trip[], receipts: readonly Receipt[]):
 }
 
 /** 모든 여행의 검수 완료된 영수증을 모아, 최근 1년 월별 지출을 통화별로 표시한다. */
-function renderOverallTrend(trips: readonly Trip[], receipts: readonly Receipt[]): HTMLElement {
+function renderOverallTrend(
+  trips: readonly Trip[], receipts: readonly Receipt[], currencyOrder: readonly string[],
+): HTMLElement {
   const tripIds = new Set(trips.map(trip => trip.id));
   const eligible = receipts.filter(receipt =>
     receipt.tripId !== null && tripIds.has(receipt.tripId) && isCountable(receipt),
   );
-  const currencies = [...new Set(trips.filter(trip => eligible.some(r => r.tripId === trip.id)).map(trip => trip.currency))].sort();
+  const eligibleTripIds = new Set(eligible.map(receipt => receipt.tripId));
+  const eligibleCurrencies = new Set(trips.filter(trip => eligibleTripIds.has(trip.id)).map(trip => trip.currency));
+  const currencies = currencyOrder.filter(currency => eligibleCurrencies.has(currency));
   const today = new Date();
   const first = new Date(today.getFullYear(), today.getMonth() - 12, 1);
   const monthKey = (date: Date): string => `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
@@ -227,6 +268,7 @@ function renderTripStatistics(trip: Trip, receipts: readonly Receipt[]): HTMLEle
 }
 
 function renderTripCategories(trips: readonly Trip[], byTrip: ReadonlyMap<string, Receipt[]>): HTMLElement {
+  const scrollable = trips.length > CATEGORY_TRIP_LIMIT;
   return el('section', { class: 'stats-categories', 'data-chart': 'categories', 'aria-labelledby': 'stats-categories-title' },
     el('header', { class: 'stats-panel-header' },
       el('h3', { class: 'section-title stats-panel-title', id: 'stats-categories-title', tabindex: -1,
@@ -235,7 +277,9 @@ function renderTripCategories(trips: readonly Trip[], byTrip: ReadonlyMap<string
     ),
     trips.length === 0
       ? emptyState('조건에 맞는 여행이 없습니다.', '기간을 바꾸거나 여행 이름을 지워 보세요.')
-      : el('div', { class: 'stats-trip-list' },
+      : el('div', { class: 'stats-trip-list', 'data-trip-limit': scrollable ? CATEGORY_TRIP_LIMIT : undefined,
+          role: scrollable ? 'region' : undefined, 'aria-label': scrollable ? '여행별 지출 구성 목록' : undefined,
+          tabindex: scrollable ? 0 : undefined },
           ...trips.map(trip => renderTripStatistics(trip, byTrip.get(trip.id) ?? [])),
         ),
   );
@@ -275,11 +319,23 @@ export async function renderStats(): Promise<HTMLElement> {
     else byTrip.set(r.tripId, [r]);
   }
 
-  const currencyCounts = new Map<string, number>();
-  for (const trip of trips) currencyCounts.set(trip.currency, (currencyCounts.get(trip.currency) ?? 0) + 1);
+  const currencyActivity = new Map<string, { count: number; latestDate: string }>();
+  for (const trip of trips) {
+    const activity = currencyActivity.get(trip.currency) ?? { count: 0, latestDate: '' };
+    activity.count++;
+    if (trip.startDate > activity.latestDate) activity.latestDate = trip.startDate;
+    for (const receipt of byTrip.get(trip.id) ?? []) {
+      if (!isCountable(receipt)) continue;
+      const date = paymentDate(receipt.purchasedAt);
+      if (date > activity.latestDate) activity.latestDate = date;
+    }
+    currencyActivity.set(trip.currency, activity);
+  }
   const currencyLabels = new Map(CURRENCIES);
-  const availableCurrencies = [...currencyCounts.keys()].sort((a, b) =>
-    (currencyCounts.get(b) ?? 0) - (currencyCounts.get(a) ?? 0) || a.localeCompare(b));
+  const availableCurrencies = [...currencyActivity]
+    .sort(([a, left], [b, right]) => right.count - left.count ||
+      right.latestDate.localeCompare(left.latestDate) || a.localeCompare(b))
+    .map(([currency]) => currency);
   const filter = selectField('표시 통화', 'statsCurrency', [
     ['', '전체 통화'],
     ...availableCurrencies.map(currency => [currency, currencyLabels.get(currency) ?? currency] as const),
@@ -304,7 +360,7 @@ export async function renderStats(): Promise<HTMLElement> {
     const visibleReceipts = all.filter(receipt => receipt.tripId !== null && visibleIds.has(receipt.tripId));
     selectionStatus.textContent = `${currency ? `${currency} 기준` : '전체 통화'} · 여행 ${visibleTrips.length}개`;
     results.replaceChildren(
-      renderOverallTrend(visibleTrips, visibleReceipts),
+      renderOverallTrend(visibleTrips, visibleReceipts, availableCurrencies),
       renderTravelStatistics(visibleTrips, byTrip, trips.length, travelFilters,
         selected => renderTripCategories(selected, byTrip)),
     );

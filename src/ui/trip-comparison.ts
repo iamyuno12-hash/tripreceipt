@@ -8,6 +8,8 @@ import { expenseText } from './exchange-display.ts';
 import { field, selectField } from './form.ts';
 import { attachDateCalendar } from './date-calendar.ts';
 
+const COMPARISON_TRIP_LIMIT = 4;
+
 export interface TravelFilters {
   period: 'year' | '3months' | 'month' | 'all' | 'custom';
   query: string;
@@ -145,6 +147,11 @@ export function renderTravelStatistics(
       results.replaceChildren(emptyState('여행이 2개 이상 등록되면 지출을 비교할 수 있습니다.'));
     } else if (visible.length === 0) {
       results.appendChild(emptyState('조건에 맞는 여행이 없습니다.', '기간을 바꾸거나 여행 이름을 지워 보세요.'));
+    }
+    if (registeredTripCount >= 2 && visible.length > COMPARISON_TRIP_LIMIT) {
+      results.dataset.tripLimit = String(COMPARISON_TRIP_LIMIT);
+    } else {
+      delete results.dataset.tripLimit;
     }
     categories.replaceChildren(renderCategories(visible.map(row => row.trip)));
     results.scrollTop = 0;
