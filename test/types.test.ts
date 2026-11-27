@@ -71,7 +71,7 @@ test('검증 실패한 영수증은 needs_review 로 넘어간다', () => {
   assert.equal(resolveStatus(receipt(13000, [item(8000)])), 'needs_review');
 });
 
-test('사용자가 확인한 영수증은 상태를 되돌리지 않는다', () => {
+test('내용 변경이 없는 확인됨 영수증의 판정은 유지된다', () => {
   // 금액이 안 맞아도 사용자가 confirmed 로 바꿨으면 그 판단을 존중한다
   const r = receipt(13000, [item(8000)], 'confirmed');
   assert.equal(resolveStatus(r), 'confirmed');

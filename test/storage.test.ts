@@ -117,7 +117,7 @@ test('품목을 고치면 상태가 다시 계산된다', async () => {
   assert.equal(fixed.items[0]?.receiptId, r.id, 'receiptId 가 품목에 채워지지 않음');
 });
 
-test('사용자가 확인하면 금액이 안 맞아도 confirmed 로 남는다', async () => {
+test('확인됨은 같은 내용을 저장하면 유지되고, 내용을 바꾸면 다시 판정된다', async () => {
   const trip = await createTrip(TRIP);
   const r = await createReceipt({
     tripId: trip.id, imageId: null, merchant: 'x',
@@ -128,9 +128,24 @@ test('사용자가 확인하면 금액이 안 맞아도 confirmed 로 남는다'
   assert.equal(r.status, 'needs_review');
 
   await confirmReceipt(r.id);
-  // 이후 수정이 일어나도 confirmed 를 되돌리지 않는다
+  assert.equal((await getReceipt(r.id))?.status, 'confirmed');
+  const same = await updateReceipt(r.id, { merchant: 'x', items: items(['라멘', 800]) });
+  assert.equal(same.status, 'confirmed');
   const after = await updateReceipt(r.id, { merchant: '이치란' });
-  assert.equal(after.status, 'confirmed');
+  assert.equal(after.status, 'needs_review');
+  await confirmReceipt(r.id);
+  const matches = await updateReceipt(r.id, { total: 800 });
+  assert.equal(matches.status, 'parsed');
+});
+
+test('빈 영수증은 0=0으로 검증 통과하거나 확인 완료 처리되지 않는다', async () => {
+  const trip = await createTrip(TRIP);
+  const r = await createReceipt({ tripId: trip.id, imageId: null, merchant: '',
+    purchasedAt: '2026-04-11T12:40:00.000Z', currency: 'JPY',
+    total: 0, tax: null, confidence: 0.9, items: [] });
+  assert.equal(r.status, 'pending');
+  await assert.rejects(confirmReceipt(r.id), /내용을 저장/);
+  assert.equal((await getReceipt(r.id))?.status, 'pending');
 });
 
 test('영수증은 여행별로 조회되고 결제시각 순으로 정렬된다', async () => {

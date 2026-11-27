@@ -1,89 +1,74 @@
-/** 여행 상세 = 그 여행의 영수증 목록. */
-import { el, pageHeader, emptyState, phaseNote } from '../dom.ts';
-import { money, dateTime, dateRange } from '../format.ts';
-import { getTrip } from '../../storage/trips.ts';
+/** 여행 상세와 미지정 보관함 상세. 목록 카드의 펼침과 별개 화면으로 유지한다. */
+import { el, pageHeader, emptyState } from '../dom.ts';
+import { dateRange } from '../format.ts';
+import type { Trip } from '../../types.ts';
+import { getTrip, deleteTrip } from '../../storage/trips.ts';
 import { listReceipts } from '../../storage/receipts.ts';
 import { isSampleLoaded } from '../../storage/meta.ts';
+import { summarizeExpenses } from '../../currency.ts';
+import { prepareExchangeRates } from '../../exchange.ts';
 import { sampleBanner } from './home.ts';
-import { tripTotal, crossCheck, type Receipt } from '../../types.ts';
+import { expenseText } from '../exchange-display.ts';
+import { receiptRow } from '../receipt-list.ts';
+import { createDeleteButton } from '../delete-action.ts';
+import { receiptRegistrationActions } from '../registration-dialog.ts';
+import { registrationGuide } from '../registration-guide.ts';
+import { rememberTravelPosition, travelPath } from '../travel-state.ts';
 
-const STATUS_LABEL: Record<Receipt['status'], string> = {
-  pending: '인식 대기',
-  parsed: '인식 완료',
-  needs_review: '검수 필요',
-  confirmed: '확인됨',
-};
-
-function receiptRow(r: Receipt): HTMLElement {
-  const check = crossCheck(r);
-  const isPending = r.status === 'pending';
-
-  return el('a', { class: 'card receipt-row', href: `#/receipts/${r.id}` },
-    el('div', { class: 'receipt-main' },
-      el('span', { class: 'receipt-merchant', text: r.merchant || '(상호 미인식)' }),
-      el('span', { class: 'receipt-date', text: dateTime(r.purchasedAt) }),
+async function renderTravelDetail(trip: Trip | null): Promise<HTMLElement> {
+  const [saved, sample] = await Promise.all([listReceipts(trip?.id ?? null), isSampleLoaded()]);
+  const receipts = trip ? await prepareExchangeRates([trip], saved) : saved;
+  const summary = trip ? summarizeExpenses(receipts, trip.currency) : null;
+  const review = receipts.filter(receipt => receipt.status === 'needs_review').length;
+  const path = travelPath(trip?.id ?? null);
+  const page = el('div', { class: 'trip-detail-page', 'data-page-key': path, 'data-return-path': path,
+    'data-travel-group': trip?.id ?? 'unassigned' });
+  const error = el('p', { class: 'field-hint', role: 'alert' });
+  page.append(
+    registrationGuide(),
+    ...(sample ? [sampleBanner()] : []),
+    el('a', { class: 'back-link', href: '#/' }, '← 여행 목록'),
+    pageHeader(trip?.name ?? '여행 미지정', trip ? `${trip.destination} · ${dateRange(trip.startDate, trip.endDate)}` : '여행을 정하기 전 영수증을 보관합니다.'),
+    el('section', { class: 'trip-overview', 'aria-label': trip ? '여행 요약' : '미지정 보관함 요약' },
+      el('div', { class: 'summary-box' },
+        trip && summary ? el('div', { class: 'summary-item trip-total' },
+          el('span', { class: 'summary-label', text: `총 지출 (${trip.currency})` }),
+          el('span', { class: 'summary-value', text: expenseText(summary, trip.currency) }),
+        ) : null,
+        el('div', { class: 'summary-item' }, el('span', { class: 'summary-label', text: '영수증' }),
+          el('span', { class: 'summary-value', text: `${receipts.length}장` })),
+        review ? el('div', { class: 'summary-item' }, el('span', { class: 'summary-label', text: '검수 필요' }),
+          el('span', { class: 'summary-value warn', text: `${review}장` })) : null,
+      ),
+      trip ? el('div', { class: 'trip-overview-actions', 'aria-label': '여행 관리' },
+        el('a', { class: 'btn tiny', href: `#/trips/${trip.id}/edit`, onclick: () => rememberTravelPosition(page) }, '여행 수정'),
+        createDeleteButton({ label: '여행 삭제', tiny: true,
+          message: `"${trip.name}"을(를) 삭제할까요? 이 여행의 영수증과 사진도 함께 삭제되며 되돌릴 수 없습니다.`,
+          remove: () => deleteTrip(trip.id), destination: '/', onError: message => { error.textContent = message; } }),
+      ) : null,
+      error,
     ),
-    el('div', { class: 'receipt-side' },
-      el('span', { class: 'receipt-amount',
-        text: isPending ? '—' : money(r.total, r.currency) }),
-      el('span', { class: `status status-${r.status}`, text: STATUS_LABEL[r.status] }),
+    el('section', { class: 'travel-receipts', 'aria-labelledby': 'trip-receipts-title' },
+      el('div', { class: 'travel-receipt-actions' },
+        el('h2', { id: 'trip-receipts-title', text: '영수증' }),
+        receiptRegistrationActions(trip?.id ?? null, () => rememberTravelPosition(page)),
+      ),
+      !trip ? el('p', { class: 'field-hint', text: '여행에 지정하기 전에는 지출·통계에서 제외되며 전체 CSV에는 포함됩니다.' }) : null,
+      summary?.pending ? el('p', { class: 'stat-note', text: `환산 대기 ${summary.pending}장은 합계에서 빠져 있습니다. 영수증 수정 화면에서 환율을 입력하거나 조회하세요.` }) : null,
+      receipts.length ? el('div', { class: 'card-list' }, ...receipts.map(receipt => receiptRow(receipt, trip?.currency ?? null,
+        () => rememberTravelPosition(page, receipt.id)))) : emptyState('아직 영수증이 없습니다.'),
     ),
-    // 교차검증에 걸린 영수증은 목록에서 이유까지 바로 보여준다.
-    r.status === 'needs_review'
-      ? el('p', { class: 'receipt-warn',
-          text: `품목 합계 ${money(check.itemsTotal, r.currency)} 와 총액이 ${money(Math.abs(check.difference), r.currency)} 차이납니다` })
-      : null,
   );
+  return page;
 }
 
 export async function renderTrip(params: Record<string, string>): Promise<HTMLElement> {
-  const tripId = params['id'] ?? '';
-  const trip = await getTrip(tripId);
+  const trip = await getTrip(params['id'] ?? '');
+  if (!trip) return el('div', {}, pageHeader('여행'), emptyState('여행을 찾을 수 없습니다.'),
+    el('a', { class: 'btn', href: '#/' }, '← 여행 목록'));
+  return renderTravelDetail(trip);
+}
 
-  if (!trip) {
-    return el('div', {},
-      pageHeader('여행'),
-      emptyState('여행을 찾을 수 없습니다.'),
-      el('a', { class: 'btn', href: '#/' }, '← 여행 목록'),
-    );
-  }
-
-  const [receipts, sample] = await Promise.all([listReceipts(trip.id), isSampleLoaded()]);
-  const reviewCount = receipts.filter((r) => r.status === 'needs_review').length;
-
-  return el('div', {},
-    sample ? sampleBanner() : null,
-    el('a', { class: 'back-link', href: '#/' }, '← 여행 목록'),
-    pageHeader(trip.name, `${trip.destination} · ${dateRange(trip.startDate, trip.endDate)}`),
-    el('div', { class: 'btn-row' },
-      el('a', { class: 'btn tiny', href: `#/trips/${trip.id}/edit` }, '여행 수정'),
-    ),
-
-    el('div', { class: 'summary-box' },
-      el('div', { class: 'summary-item' },
-        el('span', { class: 'summary-label', text: '총 지출' }),
-        el('span', { class: 'summary-value', text: money(tripTotal(receipts), trip.currency) }),
-      ),
-      el('div', { class: 'summary-item' },
-        el('span', { class: 'summary-label', text: '영수증' }),
-        el('span', { class: 'summary-value', text: `${receipts.length}장` }),
-      ),
-      reviewCount > 0
-        ? el('div', { class: 'summary-item' },
-            el('span', { class: 'summary-label', text: '검수 필요' }),
-            el('span', { class: 'summary-value warn', text: `${reviewCount}장` }),
-          )
-        : null,
-    ),
-
-    receipts.length === 0
-      ? emptyState('아직 영수증이 없습니다.', '등록 화면에서 영수증 사진을 올리세요.')
-      : el('div', { class: 'card-list' }, ...receipts.map(receiptRow)),
-
-    el('div', { class: 'btn-row' },
-      el('a', { class: 'btn primary', href: `#/trips/${trip.id}/receipts/new` }, '+ 영수증 직접 입력'),
-      el('a', { class: 'btn', href: '#/scan' }, '사진으로 추가'),
-    ),
-    phaseNote('P4', '사진으로 추가하면 OCR 이 품목과 금액을 자동으로 채웁니다. 지금은 직접 입력만 저장됩니다.'),
-  );
+export function renderUnassigned(): Promise<HTMLElement> {
+  return renderTravelDetail(null);
 }

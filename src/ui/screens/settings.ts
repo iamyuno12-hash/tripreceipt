@@ -1,5 +1,6 @@
 /** 설정 화면. 저장 상태 확인과 데이터 관리. */
-import { el, pageHeader, phaseNote } from '../dom.ts';
+import { el, pageHeader } from '../dom.ts';
+import { showMessage } from '../message-dialog.ts';
 import { DETECTION_MODEL, RECOGNITION_MODELS, totalModelMB } from '../../ocr/models.ts';
 import { clearAll, usage } from '../../storage/db.ts';
 import { isSampleLoaded } from '../../storage/meta.ts';
@@ -59,13 +60,18 @@ export async function renderSettings(): Promise<HTMLElement> {
 
     el('h2', { class: 'section-title', text: '저장 상태' }),
     el('div', { class: 'card' },
-      row('저장 위치', '이 브라우저 (IndexedDB) — 외부 전송 없음'),
+      row('저장 위치', '여행·영수증·사진은 이 브라우저에 저장'),
+      row('환율 조회', '통화 코드와 기준일만 참고환율 서비스로 전송'),
       row('저장된 데이터',
         `여행 ${counts.trips}개 · 영수증 ${counts.receipts}장 · 사진 ${counts.images}장`),
       estimate
         ? row('사용량', `${mb(estimate.usage)} / ${mb(estimate.quota)}`)
         : null,
       persistRow,
+      el('p', { class: 'field-hint settings-csv-note' },
+        el('a', { href: '#/stats' }, '통계 화면'),
+        '에서 지출 내역을 내려받을 수 있습니다. CSV에는 사진이 포함되지 않습니다.',
+      ),
     ),
 
     el('h2', { class: 'section-title', text: '샘플 데이터' }),
@@ -109,12 +115,24 @@ export async function renderSettings(): Promise<HTMLElement> {
       el('p', { class: 'field-hint',
         text: '여행·영수증·사진이 모두 지워집니다. 백엔드가 없어 되돌릴 수 없습니다.' }),
       el('button', { class: 'btn danger', type: 'button',
-        onclick: () => {
-          if (!confirm('모든 데이터를 삭제할까요? 되돌릴 수 없습니다.')) return;
-          void clearAll().then(reload);
+        onclick: async event => {
+          const button = event.currentTarget as HTMLButtonElement;
+          if (button.disabled || !(await showMessage(button, {
+            title: '전체 삭제', message: '모든 데이터를 삭제할까요? 되돌릴 수 없습니다.',
+            action: { label: '전체 삭제', danger: true },
+          }))) return;
+          button.disabled = true;
+          try {
+            await clearAll();
+            reload();
+          } catch (error) {
+            button.disabled = false;
+            void showMessage(button, {
+              title: '데이터 삭제 실패', message: error instanceof Error ? error.message : String(error),
+            });
+          }
         } }, '전체 삭제'),
     ),
 
-    phaseNote('P6', 'CSV 내보내기가 추가되면 삭제 전에 데이터를 백업할 수 있습니다.'),
   );
 }

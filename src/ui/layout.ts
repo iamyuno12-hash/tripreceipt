@@ -18,7 +18,6 @@ interface NavItem {
 
 const NAV: readonly NavItem[] = [
   { path: '/', label: '여행', glyph: '◆', matchPrefix: '/trip' },
-  { path: '/scan', label: '등록', glyph: '◎', matchPrefix: '/scan' },
   { path: '/stats', label: '통계', glyph: '▤', matchPrefix: '/stats' },
   { path: '/settings', label: '설정', glyph: '⚙', matchPrefix: '/settings' },
 ];
@@ -26,7 +25,7 @@ const NAV: readonly NavItem[] = [
 function isActive(item: NavItem, path: string): boolean {
   // 영수증은 여행에 속하므로 상세 화면에서도 '여행' 탭을 활성으로 유지한다.
   if (item.path === '/') {
-    return path === '/' || path.startsWith('/trip') || path.startsWith('/receipt');
+    return path === '/' || path === '/unassigned' || path.startsWith('/trip') || path.startsWith('/receipt') || path === '/scan';
   }
   return path.startsWith(item.matchPrefix);
 }

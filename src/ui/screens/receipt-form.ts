@@ -7,15 +7,21 @@
  * 교차검증이 왜 필요한지 사용자가 눈으로 바로 알 수 있게 하려는 의도다.
  */
 import { el, pageHeader } from '../dom.ts';
+import { showMessage } from '../message-dialog.ts';
 import { field, selectField, readForm, errorBox, CURRENCIES } from '../form.ts';
 import { money } from '../format.ts';
-import { CATEGORIES, AMOUNT_TOLERANCE, type Category } from '../../types.ts';
+import { createTaxField } from '../tax-field.ts';
+import { createReceiptImage } from '../receipt-image.ts';
+import { createExchangeField } from '../exchange-field.ts';
+import { currencyDigits, sumMoney } from '../../currency.ts';
+import { CATEGORIES, amountTolerance, type Category } from '../../types.ts';
 import { getTrip } from '../../storage/trips.ts';
 import {
-  createReceipt, getReceipt, updateReceipt, deleteReceipt, type ItemDraft,
+  createReceipt, getReceipt, updateReceipt, type ItemDraft,
 } from '../../storage/receipts.ts';
 import { ensurePersistOnce } from '../../storage/persist.ts';
 import { navigate } from '../../router.ts';
+import { travelPath } from '../travel-state.ts';
 import {
   extractReceiptAmounts, extractReceiptDate, extractReceiptItems,
   extractReceiptMerchant, extractReceiptPurchasedAt, groupReceiptLines,
@@ -96,8 +102,8 @@ function inferCategory(
   return '기타';
 }
 
-function emptyRow(): Row {
-  return { name: '', quantity: 1, unitPrice: null, amount: 0, category: '기타' };
+function emptyRow(category: Category = '기타'): Row {
+  return { name: '', quantity: 1, unitPrice: null, amount: 0, category };
 }
 
 function localDateTimeValue(iso: string): string {
@@ -112,13 +118,13 @@ export async function renderReceiptForm(params: Record<string, string>): Promise
   const editing = receiptId !== undefined;
 
   const existing = editing ? await getReceipt(receiptId) : undefined;
-  const tripId = existing?.tripId ?? params['tripId'] ?? '';
-  const trip = await getTrip(tripId);
+  const tripId = existing ? existing.tripId : params['tripId'] || null;
+  const trip = tripId ? await getTrip(tripId) : undefined;
 
-  if (!trip) {
+  if ((editing && !existing) || (tripId && !trip)) {
     return el('div', {},
       pageHeader('영수증'),
-      el('p', { class: 'empty', text: '여행을 찾을 수 없습니다.' }),
+      el('p', { class: 'empty', text: editing && !existing ? '영수증을 찾을 수 없습니다.' : '여행을 찾을 수 없습니다.' }),
       el('a', { class: 'btn', href: '#/' }, '← 여행 목록'),
     );
   }
@@ -132,12 +138,13 @@ const fillFromOcr =
   existing.items.length === 0 &&
   existing.total === 0;
 
-const parsedItems = fillFromOcr
-  ? extractReceiptItems(ocrRows)
-  : [];
+const parsedItems = extractReceiptItems(ocrRows);
+const ocrMerchant = extractReceiptMerchant(ocrRows);
+const ocrDateTime = extractReceiptPurchasedAt(ocrRows);
+const ocrAmounts = extractReceiptAmounts(ocrRows, parsedItems);
 
 const merchant = fillFromOcr
-  ? extractReceiptMerchant(ocrRows) ?? ''
+  ? ocrMerchant ?? ''
   : existing?.merchant ?? '';
 
 const rows: Row[] = existing?.items.map((item) => ({
@@ -161,7 +168,7 @@ if (fillFromOcr) {
 if (rows.length === 0) rows.push(emptyRow());
 
 const purchasedAt = fillFromOcr
-  ? extractReceiptPurchasedAt(ocrRows) ?? ''
+  ? ocrDateTime ?? ''
   : localDateTimeValue(existing?.purchasedAt ?? new Date().toISOString());
 
 const dateOnly =
@@ -170,14 +177,16 @@ const dateOnly =
     : null;
 
 const amounts = fillFromOcr
-  ? extractReceiptAmounts(ocrRows, parsedItems)
+  ? ocrAmounts
   : null;
 
 const total = amounts
   ? amounts.total
-  : existing?.total ?? 0;
+  : existing?.status === 'pending' && existing.items.length === 0 && existing.total === 0
+    ? null
+    : existing?.total ?? null;
 
-  const currency = existing?.currency ?? trip.currency;
+  const currency = existing?.currency ?? trip?.currency ?? 'KRW';
   const amountHints: string[] = [];
   if (amounts?.totalInferred) {
     amountHints.push('인쇄된 합계에서 할인을 뺀 금액을 채웠어요. 결제금액을 확인하세요.');
@@ -193,17 +202,37 @@ const total = amounts
   const errorSlot = el('div', {});
 
   const totalInput = el('input', {
-    class: 'input', id: 'f-total', name: 'total', type: 'number', step: '1', min: '0',
+    class: 'input', id: 'f-total', name: 'total', type: 'number', step: 'any', min: '0',
     value: total === null ? '' : String(total), required: true,
   });
+  const currencyField = selectField('결제 통화', 'currency', CURRENCIES, currency);
+  const currencyInput = currencyField.querySelector<HTMLSelectElement>('select')!;
+  const taxField = createTaxField(totalInput, currencyInput, existing?.tax ?? null);
+  let refreshOcr = (): void => {};
+  let totalFromItems = total === null;
+  let updatingTotal = false;
+
+  function notifyTotalChange(): void {
+    updatingTotal = true;
+    try { totalInput.dispatchEvent(new Event('input', { bubbles: true })); }
+    finally { updatingTotal = false; }
+  }
 
   function itemsSum(): number {
-    return rows.reduce((s, r) => s + r.amount, 0);
+    return sumMoney(rows.map(row => row.amount), currencyInput.value);
   }
 
   function refreshBalance(): void {
     const sum = itemsSum();
-    if (!totalInput.value) {
+    const currency = currencyInput.value;
+    if (totalFromItems) {
+      const next = rows.some(row => row.name.trim() || row.amount !== 0) ? String(sum) : '';
+      if (totalInput.value !== next) {
+        totalInput.value = next;
+        notifyTotalChange();
+      }
+    }
+    if (!totalInput.value || (num(totalInput.value) === 0 && !rows.some(row => row.name.trim() || row.amount > 0))) {
       balance.className = 'balance warn';
       balance.replaceChildren(
         el('span', { text: '품목 합계 ' + money(sum, currency) }),
@@ -213,7 +242,7 @@ const total = amounts
     }
     const stated = num(totalInput.value);
     const diff = stated - sum;
-    const ok = Math.abs(diff) <= AMOUNT_TOLERANCE;
+    const ok = Math.abs(diff) <= amountTolerance(currency) + Number.EPSILON * Math.max(1, stated, sum) * 4;
 
     balance.className = ok ? 'balance ok' : 'balance warn';
     balance.replaceChildren(
@@ -226,11 +255,28 @@ const total = amounts
 
   function drawRows(): void {
     itemsBody.replaceChildren(
-      ...rows.map((row, idx) =>
-        el('tr', {},
+      ...rows.map((row, idx) => {
+        const amountInput = el('input', {
+          class: 'input tight amt', type: 'number', step: 'any',
+          value: String(row.amount), 'aria-label': '금액',
+          oninput: (e: Event) => {
+            row.amount = num((e.target as HTMLInputElement).value);
+            refreshBalance();
+          },
+        });
+
+        // 금액을 직접 고칠 때는 단가를 유지한다. 수량·단가를 바꿀 때만 다시 계산한다.
+        const recalculateAmount = (): void => {
+          if (row.quantity === null || row.unitPrice === null) return;
+          row.amount = row.quantity * row.unitPrice;
+          amountInput.value = String(row.amount);
+          refreshBalance();
+        };
+
+        return el('tr', {},
           el('td', {},
             el('input', { class: 'input tight', value: row.name, placeholder: '품목명',
-              oninput: (e: Event) => { row.name = (e.target as HTMLInputElement).value; } }),
+              oninput: (e: Event) => { row.name = (e.target as HTMLInputElement).value; refreshBalance(); } }),
           ),
           el('td', { class: 'num' },
             el('input', { class: 'input tight qty', type: 'number', min: '1',
@@ -244,34 +290,31 @@ const total = amounts
                 row.quantity = Number.isSafeInteger(quantity) && quantity > 0 ? quantity : null;
                 row.quantityInferred = false;
                 input.title = '수량';
+                recalculateAmount();
               } }),
           ),
           el('td', { class: 'num' },
-            el('input', { class: 'input tight amt', type: 'number', min: '0', step: '1',
-              value: row.unitPrice ?? '', placeholder: '자동 계산', 'aria-label': '단가',
+            el('input', { class: 'input tight amt', type: 'number', min: '0', step: 'any',
+              value: row.unitPrice ?? '', placeholder: '저장 시 계산', 'aria-label': '단가',
               oninput: (e: Event) => {
                 const input = e.target as HTMLInputElement;
                 row.unitPrice = input.value === '' ? null : num(input.value);
+                recalculateAmount();
               } }),
           ),
           el('td', { class: 'num' },
-            el('input', { class: 'input tight amt', type: 'number', step: '1',
-              value: String(row.amount),
-              oninput: (e: Event) => {
-                row.amount = num((e.target as HTMLInputElement).value);
-                refreshBalance();
-              } }),
+            amountInput,
           ),
           el('td', {},
             (() => {
-              const sel = el('select', { class: 'input tight' });
+              const sel = el('select', { class: 'input tight', 'aria-label': '분류' });
               for (const c of CATEGORIES) {
                 sel.appendChild(el('option', { value: c, text: c, selected: c === row.category }));
               }
               sel.addEventListener('change', (e) => {
                 row.category = (e.target as HTMLSelectElement).value as Category;
               });
-              return sel;
+              return el('div', { class: 'item-category-wrap' }, sel);
             })(),
           ),
           el('td', { class: 'num' },
@@ -283,14 +326,19 @@ const total = amounts
                 refreshBalance();
               } }, '삭제'),
           ),
-        ),
-      ),
+        );
+      }),
     );
+    refreshBalance();
+    refreshOcr();
   }
 
   drawRows();
-  refreshBalance();
-  totalInput.addEventListener('input', refreshBalance);
+  totalInput.addEventListener('input', () => {
+    if (!updatingTotal) totalFromItems = totalInput.value === '' && !totalInput.validity.badInput;
+    refreshBalance();
+  });
+  currencyInput.addEventListener('change', refreshBalance);
 
   const form = el('form', { class: 'form', novalidate: 'true' },
     field({ label: '상호', name: 'merchant', required: true,
@@ -299,10 +347,12 @@ const total = amounts
       field({ label: '결제 일시', name: 'purchasedAt', type: 'datetime-local',
         value: purchasedAt, required: true, step: '1',
         hint: dateOnly ? '사진에서 읽은 날짜 ' + dateOnly + ' · 시간을 확인해 입력하세요.' : undefined }),
-      selectField('통화', 'currency', CURRENCIES, currency),
+      currencyField,
     ),
 
     el('h2', { class: 'section-title', text: '품목' }),
+    el('p', { class: 'field-hint',
+      text: '수량·단가를 바꾸면 금액이 다시 계산됩니다. 금액은 할인 등을 반영해 직접 고칠 수 있으며, 이때 단가는 유지됩니다. 단가를 비워 두면 저장할 때 금액÷수량으로 채웁니다.' }),
     fillFromOcr && parsedItems.some((item) => item.quantityInferred)
       ? el('p', { class: 'field-hint', text: '계산한 수량을 영수증과 대조하세요. ' +
           parsedItems.filter((item) => item.quantityInferred).map((item) => item.name).join(', ') })
@@ -324,20 +374,17 @@ const total = amounts
     ),
     el('button', { class: 'btn', type: 'button',
       onclick: () => {
-        rows.push(emptyRow());
+        rows.push(emptyRow(rows.at(-1)?.category));
         drawRows();
       } }, '+ 품목 추가'),
 
     el('h2', { class: 'section-title', text: '합계' }),
-    el('div', { class: 'field-row' },
-      el('div', { class: 'field' },
-        el('label', { class: 'field-label', for: 'f-total', text: '영수증 총액' }),
-        totalInput,
-        el('span', { class: 'field-hint', text: '영수증에 찍힌 금액을 그대로 입력하세요.' }),
-      ),
-      field({ label: '부가세 (선택)', name: 'tax', type: 'number', step: '1',
-        value: existing?.tax ?? '' }),
+    el('div', { class: 'field' },
+      el('label', { class: 'field-label', for: 'f-total', text: '영수증 총액' }),
+      totalInput,
+      el('span', { class: 'field-hint', text: '비워 두면 품목 합계로 채워집니다. 직접 입력한 총액은 유지되며, 총액을 바꿔도 품목 금액은 바뀌지 않습니다.' }),
     ),
+    taxField.element,
     amountHints.length > 0 ? el('p', { class: 'field-hint', text: amountHints.join(' · ') }) : null,
     balance,
     el('p', { class: 'field-hint',
@@ -347,13 +394,64 @@ const total = amounts
     el('div', { class: 'btn-row' },
       el('button', { class: 'btn primary', type: 'submit' }, editing ? '저장' : '추가'),
       el('a', { class: 'btn',
-        href: editing ? `#/receipts/${receiptId}` : `#/trips/${trip.id}` }, '취소'),
+        href: editing ? `#/receipts/${receiptId}` : `#${travelPath(tripId)}` }, '취소'),
     ),
   );
+
+  const dateInput = form.querySelector<HTMLInputElement>('[name="purchasedAt"]')!;
+  const merchantInput = form.querySelector<HTMLInputElement>('[name="merchant"]')!;
+  const exchange = createExchangeField(currencyInput, dateInput, totalInput, trip?.currency ?? null, existing?.exchangeRates);
+  form.querySelector('.field-row')!.after(exchange.element);
+
+  // 저장된 OCR 원문을 다시 추출한다. 결과가 없는 필드는 현재 입력을 보존한다.
+  const ocrItemRows = (): Row[] => parsedItems.map(item => ({ ...item, category: inferCategory(ocrMerchant ?? '', item.name) }));
+  const rowKey = (values: readonly Row[]): string => JSON.stringify(values
+    .filter(row => row.name.trim() || row.amount !== 0)
+    .map(row => [row.name.trim(), row.quantity, row.unitPrice, row.amount, row.category]));
+  const canApply = !!(ocrMerchant || ocrDateTime || parsedItems.length || ocrAmounts.total !== null);
+  const ocrMessage = el('span', { class: 'field-hint', role: 'status' });
+  const ocrButton = el('button', { class: 'btn', type: 'button', 'data-action': 'apply-ocr',
+    onclick: async () => {
+      const hasInput = !!((ocrMerchant && merchantInput.value.trim()) ||
+        (parsedItems.length && rows.some(row => row.name.trim() || row.amount !== 0 || row.unitPrice !== null || row.quantity !== 1)) ||
+        (ocrAmounts.total !== null && num(totalInput.value) !== 0) ||
+        (ocrDateTime && dateInput.value && (existing?.merchant || existing?.items.length || existing?.total || new Date(dateInput.value).getTime() !== new Date(purchasedAt).getTime())));
+      if (hasInput && !(await showMessage(ocrButton, {
+        title: 'OCR 결과 반영',
+        message: '현재 입력한 상호·결제 일시·품목·총액 중 OCR로 추출된 항목을 바꿀까요? 기존 입력을 덮어쓰며, 저장을 눌러야 적용됩니다.',
+        action: { label: '반영' },
+      }))) return;
+      if (ocrMerchant) merchantInput.value = ocrMerchant;
+      if (ocrDateTime) dateInput.value = ocrDateTime;
+      if (ocrAmounts.total !== null) {
+        totalFromItems = false;
+        totalInput.value = String(ocrAmounts.total);
+      }
+      if (parsedItems.length) { rows.splice(0, rows.length, ...ocrItemRows()); drawRows(); }
+      notifyTotalChange();
+      dateInput.dispatchEvent(new Event('input', { bubbles: true }));
+      refreshBalance();
+      refreshOcr();
+      ocrMessage.textContent = 'OCR 결과를 입력 칸에 반영했어요. 저장을 눌러야 영수증에 적용됩니다.';
+    } }, 'OCR 결과 반영');
+  refreshOcr = () => {
+    const differs = (ocrMerchant && merchantInput.value.trim() !== ocrMerchant) ||
+      (ocrDateTime && new Date(dateInput.value).getTime() !== new Date(ocrDateTime).getTime()) ||
+      (parsedItems.length && rowKey(rows) !== rowKey(ocrItemRows())) ||
+      (ocrAmounts.total !== null && (totalInput.value === '' || num(totalInput.value) !== ocrAmounts.total));
+    ocrButton.disabled = !canApply || !differs;
+    ocrMessage.textContent = !canApply ? '저장된 글자에서 자동으로 채울 항목을 찾지 못했어요. 사진과 글자를 보며 직접 입력하세요.'
+      : !differs ? 'OCR 추출 결과가 입력되어 있어요.' : '저장된 OCR 결과로 입력 칸을 다시 채울 수 있어요.';
+  };
+  form.addEventListener('input', refreshOcr);
+  form.addEventListener('change', refreshOcr);
+  refreshOcr();
+  if (existing?.ocr) form.prepend(el('div', { class: 'ocr-apply' }, ocrButton, ocrMessage));
 
   form.addEventListener('submit', (ev) => {
     ev.preventDefault();
     errorSlot.replaceChildren();
+    refreshBalance();
     const v = readForm(form);
 
     if (!v['merchant']) { errorSlot.replaceChildren(errorBox('상호를 입력하세요.')); return; }
@@ -363,10 +461,19 @@ const total = amounts
       errorSlot.replaceChildren(errorBox('결제 일시를 입력하세요.'));
       return;
     }
-    if (!v['total']) {
-      errorSlot.replaceChildren(errorBox('영수증 총액을 입력하세요.'));
+    if (!Number.isFinite(totalInput.valueAsNumber) || totalInput.valueAsNumber <= 0) {
+      void showMessage(totalInput, {
+        title: '영수증 총액 확인', message: '영수증 총액은 0보다 큰 금액으로 입력하세요.',
+      });
       return;
     }
+    const taxError = taxField.validate();
+    if (taxError) {
+      errorSlot.replaceChildren(errorBox(taxError));
+      return;
+    }
+    const exchangeError = exchange.validate();
+    if (exchangeError) { errorSlot.replaceChildren(errorBox(exchangeError)); return; }
 
     const items: ItemDraft[] = [];
     for (const [i, r] of rows.entries()) {
@@ -378,16 +485,15 @@ const total = amounts
       items.push({
         name: r.name.trim() || '(이름 없음)',
         quantity: r.quantity,
-        unitPrice: r.unitPrice ?? Math.round(r.amount / r.quantity),
+        unitPrice: r.unitPrice ?? Number((r.amount / r.quantity).toFixed(currencyDigits(currencyInput.value))),
         amount: r.amount,
         category: r.category,
         lineIndex: r.lineIndex ?? i,
       });
     }
 
-    const taxRaw = v['tax'] ?? '';
+    const taxRaw = taxField.input.value;
     const draft = {
-      tripId: trip.id,
       imageId: existing?.imageId ?? null,
       merchant: v['merchant'] ?? '',
       purchasedAt: date.toISOString(),
@@ -397,6 +503,7 @@ const total = amounts
       // 수기 입력이므로 OCR 신뢰도는 없다
       confidence: existing?.confidence ?? null,
       items,
+      exchangeRates: exchange.rates(),
     };
 
     void (async () => {
@@ -405,7 +512,7 @@ const total = amounts
           await updateReceipt(receiptId, draft);
           navigate(`/receipts/${receiptId}`);
         } else {
-          const created = await createReceipt(draft);
+          const created = await createReceipt({ ...draft, tripId });
           void ensurePersistOnce();
           navigate(`/receipts/${created.id}`);
         }
@@ -419,23 +526,15 @@ const total = amounts
 
   return el('div', {},
     el('a', { class: 'back-link',
-      href: editing ? `#/receipts/${receiptId}` : `#/trips/${trip.id}` }, '← 돌아가기'),
-    pageHeader(editing ? '영수증 수정' : '영수증 추가', trip.name),
+      href: editing ? `#/receipts/${receiptId}` : `#${travelPath(tripId)}` }, '← 돌아가기'),
+    pageHeader(editing ? '영수증 수정' : '영수증 추가', trip?.name ?? '여행 미지정'),
+    existing?.imageId ? createReceiptImage(existing.imageId) : null,
     existing?.ocr && ocrRows.length > 0
-      ? el('details', { class: 'ocr-raw', open: existing.items.length === 0 },
+      ? el('details', { class: 'ocr-raw' },
           el('summary', { text: `사진에서 읽은 글자 (${existing.ocr.lines.length}개)` }),
           el('pre', { class: 'ocr-raw-text', text: ocrRows.map((g) => g.text).join('\n') }),
         )
       : null,
     form,
-    editing && receiptId !== undefined
-      ? el('div', { class: 'danger-zone' },
-          el('button', { class: 'btn danger', type: 'button',
-            onclick: () => {
-              if (!confirm('이 영수증을 삭제할까요?')) return;
-              void deleteReceipt(receiptId).then(() => navigate(`/trips/${trip.id}`));
-            } }, '영수증 삭제'),
-        )
-      : null,
   );
 }

@@ -3,25 +3,30 @@
  *
  * 이 프로젝트에서 가장 중요한 화면이다. OCR 이 100% 정확할 수 없다는 전제 위에서,
  * 교차검증으로 "의심스러운 영수증"을 골라내 사람이 빠르게 고치게 하는 것이 설계 목표다.
- * P5 에서 실제 수정·저장이 연결된다.
+ * 수정·저장 후 품목과 총액을 다시 대조한다.
  */
-import { el, pageHeader, emptyState, phaseNote } from '../dom.ts';
+import { el, pageHeader, emptyState } from '../dom.ts';
 import { money, dateTime, percent } from '../format.ts';
-import { getReceipt, confirmReceipt } from '../../storage/receipts.ts';
-import { getTrip } from '../../storage/trips.ts';
+import { getReceipt, confirmReceipt, deleteReceipt, updateReceipt } from '../../storage/receipts.ts';
+import { listTrips } from '../../storage/trips.ts';
 import { imageObjectURL } from '../../storage/images.ts';
 import { navigate } from '../../router.ts';
-import { crossCheck, type Receipt } from '../../types.ts';
+import { crossCheck, hasReceiptContent, type Receipt, type Trip } from '../../types.ts';
+import { prepareExchangeRates } from '../../exchange.ts';
+import { conversionNote } from '../exchange-display.ts';
+import { createDeleteButton } from '../delete-action.ts';
+import { selectField } from '../form.ts';
+import { receiptBackPath } from '../travel-state.ts';
 import { groupLinesByY, lineTolerance, toTextLines } from '../../ocr/lines.ts';
 
 function checkBanner(r: Receipt): HTMLElement {
   const c = crossCheck(r);
 
-  if (r.status === 'pending') {
+  if (r.status === 'pending' || !hasReceiptContent(r)) {
     return el('div', { class: 'banner' },
       el('strong', { text: r.ocr ? '글자는 읽었고, 품목·금액은 아직 비어 있습니다.' : '아직 인식되지 않았습니다.' }),
       el('p', { text: r.ocr
-        ? '아래 "읽은 글자" 를 보며 직접 입력하세요. 자동 채우기는 P5 에서 붙습니다.'
+        ? '수정 화면에서 OCR 결과를 반영하고 저장하세요.'
         : '이미지만 등록된 상태입니다.' }),
     );
   }
@@ -41,17 +46,67 @@ function checkBanner(r: Receipt): HTMLElement {
   );
 }
 
-/** 읽은 글자를 위에서 아래, 같은 줄은 왼쪽부터 이어 붙인다 (P5 파서 전까지 사람이 보는 용도) */
+/** 읽은 글자를 위에서 아래, 같은 줄은 왼쪽부터 이어 붙여 원문 대조에 쓴다. */
 function ocrText(lines: NonNullable<Receipt['ocr']>['lines']): string {
   const tl = toTextLines(lines);
   return groupLinesByY(tl, lineTolerance(tl)).map((g) => g.text).join('\n');
 }
 
+function receiptTravelChange(receipt: Receipt, trips: readonly Trip[]): {
+  button: HTMLButtonElement; dialog: HTMLDialogElement;
+} {
+  const current = receipt.tripId ?? '';
+  const unassigned = receipt.tripId === null;
+  const label = unassigned ? '여행 지정' : '여행 변경';
+  const field = selectField('여행', 'assignTrip', [['', '여행 미지정'], ...trips.map(trip => [trip.id, trip.name] as const)], current);
+  const select = field.querySelector('select')!;
+  const error = el('p', { class: 'form-error', role: 'alert', hidden: true });
+  const save = el('button', { type: 'submit', class: 'btn primary', text: label, disabled: true });
+  const close = (): void => {
+    if (typeof dialog.close === 'function') dialog.close(); else dialog.removeAttribute('open');
+    button.focus();
+  };
+  const cancel = el('button', { type: 'button', class: 'btn', text: '취소', onclick: close });
+  const form = el('form', { class: 'form' },
+    el('h2', { id: 'assign-trip-title', text: label }), field, error,
+    el('div', { class: 'btn-row' }, save, cancel),
+  );
+  const dialog = el('dialog', { class: 'registration-dialog', 'aria-labelledby': 'assign-trip-title' }, form);
+  const button = el('button', { type: 'button', class: `btn receipt-trip-action${unassigned ? ' receipt-trip-assign' : ''}`, text: label, onclick: () => {
+    select.value = current;
+    save.disabled = true;
+    error.hidden = true;
+    if (typeof dialog.showModal === 'function') dialog.showModal(); else dialog.setAttribute('open', '');
+    select.focus();
+  } });
+
+  select.addEventListener('change', () => { save.disabled = select.value === current; });
+  dialog.addEventListener('cancel', event => { if (select.disabled) event.preventDefault(); });
+  form.addEventListener('submit', event => {
+    event.preventDefault();
+    const next = select.value;
+    if (select.disabled || next === current) return;
+
+    select.disabled = save.disabled = cancel.disabled = true;
+    error.hidden = true;
+    const hash = location.hash;
+    void updateReceipt(receipt.id, { tripId: next || null }).then(() => {
+      close();
+      if (dialog.isConnected && location.hash === hash) navigate(`/receipts/${receipt.id}`);
+    }).catch(err => {
+      select.disabled = save.disabled = cancel.disabled = false;
+      error.textContent = err instanceof Error ? err.message : `${label}에 실패했습니다.`;
+      error.hidden = false;
+    });
+  });
+  return { button, dialog };
+}
+
 export async function renderReceipt(params: Record<string, string>): Promise<HTMLElement> {
   const receiptId = params['id'] ?? '';
-  const receipt = await getReceipt(receiptId);
+  const savedReceipt = await getReceipt(receiptId);
 
-  if (!receipt) {
+  if (!savedReceipt) {
     return el('div', {},
       pageHeader('영수증'),
       emptyState('영수증을 찾을 수 없습니다.'),
@@ -59,27 +114,29 @@ export async function renderReceipt(params: Record<string, string>): Promise<HTM
     );
   }
 
-  const trip = await getTrip(receipt.tripId);
+  const trips = await listTrips();
+  const trip = trips.find(candidate => candidate.id === savedReceipt.tripId);
+  const receipt = trip ? (await prepareExchangeRates([trip], [savedReceipt]))[0]! : savedReceipt;
+  const backPath = receiptBackPath(receipt.id, receipt.tripId);
+  const actionError = el('p', { class: 'field-hint', role: 'alert' });
+  const travelChange = receiptTravelChange(receipt, trips);
   const c = crossCheck(receipt);
 
   const rows = receipt.items.map((item) =>
     el('tr', {},
       el('td', { text: item.name }),
       el('td', { class: 'num', text: String(item.quantity) }),
+      el('td', { class: 'num', text: money(item.unitPrice, receipt.currency) }),
       el('td', { class: 'num', text: money(item.amount, receipt.currency) }),
       el('td', {}, el('span', { class: 'chip', text: item.category })),
-      el('td', { class: 'num' },
-        el('a', { class: 'btn tiny', href: `#/receipts/${receipt.id}/edit` }, '수정'),
-      ),
     ),
   );
 
   return el('div', {},
-    trip
-      ? el('a', { class: 'back-link', href: `#/trips/${trip.id}` }, `← ${trip.name}`)
-      : el('a', { class: 'back-link', href: '#/' }, '← 여행 목록'),
+    el('a', { class: 'back-link', href: `#${backPath}` },
+      backPath === '/' ? '← 여행 목록' : `← ${trip?.name ?? '여행 미지정'}`),
 
-    pageHeader(receipt.merchant || '(상호 미인식)', dateTime(receipt.purchasedAt)),
+    pageHeader(receipt.merchant || '(상호 미인식)', `${dateTime(receipt.purchasedAt)} · ${trip?.name ?? '여행 미지정'}`),
 
     checkBanner(receipt),
 
@@ -105,6 +162,7 @@ export async function renderReceipt(params: Record<string, string>): Promise<HTM
       el('div', { class: 'summary-item' },
         el('span', { class: 'summary-label', text: '총액' }),
         el('span', { class: 'summary-value', text: money(receipt.total, receipt.currency) }),
+        trip ? conversionNote(receipt, trip.currency, true) : null,
       ),
       receipt.tax !== null
         ? el('div', { class: 'summary-item' },
@@ -141,27 +199,40 @@ export async function renderReceipt(params: Record<string, string>): Promise<HTM
               el('tr', {},
                 el('th', { text: '품목' }),
                 el('th', { class: 'num', text: '수량' }),
+                el('th', { class: 'num', text: '단가' }),
                 el('th', { class: 'num', text: '금액' }),
                 el('th', { text: '분류' }),
-                el('th', { class: 'num', text: '' }),
               ),
             ),
             el('tbody', {}, ...rows),
           ),
         ),
 
-    el('div', { class: 'btn-row' },
-      receipt.status === 'confirmed'
-        ? null
-        : el('button', { class: 'btn primary', type: 'button',
-            onclick: (ev: Event) => {
-              const btn = ev.currentTarget as HTMLButtonElement;
-              btn.disabled = true;
-              void confirmReceipt(receipt.id).then(() => navigate(`/trips/${receipt.tripId}`));
-            } }, '확인 완료로 표시'),
-      el('a', { class: 'btn', href: `#/receipts/${receipt.id}/edit` }, '수정'),
+    el('div', { class: 'btn-row receipt-actions' },
+      el('div', { class: 'btn-row receipt-content-actions' },
+        receipt.status === 'confirmed' || !hasReceiptContent(receipt)
+          ? null
+          : el('button', { class: 'btn primary', type: 'button',
+              onclick: (ev: Event) => {
+                const btn = ev.currentTarget as HTMLButtonElement;
+                btn.disabled = true;
+                void confirmReceipt(receipt.id).then(() => navigate(backPath)).catch(err => {
+                  btn.disabled = false;
+                  actionError.textContent = err instanceof Error ? err.message : '확인하지 못했습니다.';
+                });
+              } }, '확인 완료로 표시'),
+        el('a', { class: 'btn', href: `#/receipts/${receipt.id}/edit` }, '수정'),
+        createDeleteButton({
+          label: '영수증 삭제',
+          message: '이 영수증을 삭제할까요? 연결된 사진도 함께 삭제되며 되돌릴 수 없습니다.',
+          remove: () => deleteReceipt(receipt.id), destination: backPath,
+          onError: message => { actionError.textContent = message; },
+        }),
+      ),
+      travelChange.button,
     ),
+    travelChange.dialog,
+    actionError,
 
-    phaseNote('P4·P5', '사진에서 품목을 자동으로 채우고, 검수 결과를 바로 반영하는 흐름이 추가됩니다.'),
   );
 }

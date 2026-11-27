@@ -16,6 +16,8 @@ export interface Route {
    * 저장소에서 읽어야 하는 화면은 Promise 를 돌려줘도 된다 (P2 에서 추가).
    */
   readonly render: (params: Record<string, string>) => HTMLElement | Promise<HTMLElement>;
+  /** 화면을 떠날 때 정리할 작업이 있으면 콜백을 반환한다. */
+  readonly afterRender?: (node: HTMLElement) => void | (() => void);
 }
 
 export interface MatchedRoute {
@@ -44,10 +46,14 @@ function matchPath(pattern: string, actual: string): Record<string, string> | nu
 /** 현재 해시에서 경로만 뽑는다. 해시가 없으면 "/" */
 export function currentPath(): string {
   const h = globalThis.location.hash;
-  return h.startsWith('#') ? h.slice(1) || '/' : '/';
+  return h.startsWith('#') ? h.slice(1).split('?')[0] || '/' : '/';
 }
 
 export function navigate(path: string): void {
+  if (globalThis.location.hash === `#${path}`) {
+    globalThis.dispatchEvent(new Event('hashchange'));
+    return;
+  }
   globalThis.location.hash = path;
 }
 
@@ -68,8 +74,9 @@ export class Router {
 
   match(path: string): MatchedRoute | null {
     for (const route of this.routes) {
-      const params = matchPath(route.path, path);
-      if (params) return { route, params };
+      const [pathname = '/', query = ''] = path.split('?');
+      const params = matchPath(route.path, pathname);
+      if (params) return { route, params: { ...Object.fromEntries(new URLSearchParams(query)), ...params } };
     }
     return null;
   }
@@ -85,10 +92,11 @@ export class Router {
    * 저장소 읽기가 비동기라 빠르게 탭을 옮기면 순서가 뒤집힐 수 있다.
    */
   private renderToken = 0;
+  private disposeView: (() => void) | undefined;
 
   private render(): void {
     const path = currentPath();
-    let matched = this.match(path);
+    let matched = this.match(globalThis.location.hash.slice(1) || '/');
 
     // 알 수 없는 경로는 홈으로 되돌린다.
     // 화면만 홈으로 바꾸면 주소창과 네비게이션 표시가 어긋나기 때문이다.
@@ -98,6 +106,8 @@ export class Router {
     }
     matched ??= this.match('/');
 
+    this.disposeView?.();
+    this.disposeView = undefined;
     this.outlet.replaceChildren();
 
     if (!matched) {
@@ -132,6 +142,7 @@ export class Router {
           if (token !== this.renderToken) return; // 그 사이 다른 화면으로 이동함
           this.outlet.replaceChildren(node);
           this.scrollTop();
+          this.disposeView = found.route.afterRender?.(node) ?? undefined;
         },
         (err: unknown) => {
           if (token !== this.renderToken) return;
@@ -143,6 +154,7 @@ export class Router {
 
     this.outlet.replaceChildren(result);
     this.scrollTop();
+    this.disposeView = found.route.afterRender?.(result) ?? undefined;
   }
 
   private scrollTop(): void {
